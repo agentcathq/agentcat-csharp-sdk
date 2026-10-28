@@ -10,8 +10,8 @@ Pushing a `v*` tag runs `.github/workflows/release.yml`. It checks that the tagg
    - A tag ruleset for `v*` that lets only admins create, move or delete those tags.
    - On nuget.org, a Trusted Publishing policy with Repository Owner `agentcathq`, Repository `agentcat-csharp-sdk`, Workflow File `release.yml` and Environment `release`.
 3. Preview the readme now that the repository is public (before that, its images and badges do not load). Upload the `.nupkg` of a CI `packages` artifact on nuget.org's Upload Package page, read the Readme File section of the preview, and cancel.
-4. Unlist or deprecate `AgentCat` 0.0.1 on nuget.org. It is stable, so it would otherwise win over the preview.
-5. Release `0.1.0-preview.1` with the steps below, which push the tag `v0.1.0-preview.1`.
+4. Unlist or deprecate `AgentCat` 0.0.1 on nuget.org, the placeholder that reserved the name.
+5. Release `1.0.0` with the steps below, which push the tag `v1.0.0`.
 6. Once nuget.org lists the package, merge agentcat-ui PR #255 (the C# pages of docs.agentcat.com).
 
 ## Each release

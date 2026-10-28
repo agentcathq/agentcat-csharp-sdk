@@ -9,8 +9,8 @@
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true' or '$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
     <SignAssembly>true</SignAssembly>
     <AssemblyOriginatorKeyFile>$(MSBuildThisFileDirectory)AgentCat.snk</AssemblyOriginatorKeyFile>
-    <VersionPrefix>0.1.0</VersionPrefix>
-    <VersionSuffix>preview.1</VersionSuffix>
+    <VersionPrefix>1.0.0</VersionPrefix>
+    <VersionSuffix></VersionSuffix>
     <AssemblyVersion>$([System.Version]::Parse('$(VersionPrefix)').Major).0.0.0</AssemblyVersion>
     <FileVersion>$(VersionPrefix).0</FileVersion>
     <Authors>AgentCat, Inc.</Authors>
