@@ -1,0 +1,32 @@
+T:System.Console;AgentCat never writes to stdout or stderr
+M:System.Environment.Exit(System.Int32);AgentCat never ends the host process
+M:System.Environment.FailFast(System.String);AgentCat never ends the host process
+M:System.Environment.FailFast(System.String,System.Exception);AgentCat never ends the host process
+M:System.Threading.Tasks.Task.Run(System.Action);use the pipeline worker
+M:System.Threading.Tasks.Task.Run(System.Action,System.Threading.CancellationToken);use the pipeline worker
+M:System.Threading.Tasks.Task.Run(System.Func{System.Threading.Tasks.Task});use the pipeline worker
+M:System.Threading.Tasks.Task.Run(System.Func{System.Threading.Tasks.Task},System.Threading.CancellationToken);use the pipeline worker
+M:System.Threading.Tasks.Task.Run``1(System.Func{``0});use the pipeline worker
+M:System.Threading.Tasks.Task.Run``1(System.Func{``0},System.Threading.CancellationToken);use the pipeline worker
+M:System.Threading.Tasks.Task.Run``1(System.Func{System.Threading.Tasks.Task{``0}});use the pipeline worker
+M:System.Threading.Tasks.Task.Run``1(System.Func{System.Threading.Tasks.Task{``0}},System.Threading.CancellationToken);use the pipeline worker
+P:System.Threading.Tasks.Task.Factory;use the pipeline worker
+P:System.Threading.Tasks.Task`1.Factory;use the pipeline worker
+T:System.Threading.Tasks.TaskFactory;use the pipeline worker
+T:System.Threading.Tasks.TaskFactory`1;use the pipeline worker
+M:System.Threading.ThreadPool.QueueUserWorkItem(System.Threading.WaitCallback);use the pipeline worker
+M:System.Threading.ThreadPool.QueueUserWorkItem(System.Threading.WaitCallback,System.Object);use the pipeline worker
+M:System.Threading.ThreadPool.QueueUserWorkItem``1(System.Action{``0},``0,System.Boolean);use the pipeline worker
+M:System.Threading.ThreadPool.UnsafeQueueUserWorkItem(System.Threading.WaitCallback,System.Object);use the pipeline worker
+M:System.Threading.ThreadPool.UnsafeQueueUserWorkItem(System.Threading.IThreadPoolWorkItem,System.Boolean);use the pipeline worker
+M:System.Threading.ThreadPool.UnsafeQueueUserWorkItem``1(System.Action{``0},``0,System.Boolean);use the pipeline worker
+P:ModelContextProtocol.Protocol.CallToolRequestParams.Task;removed in ModelContextProtocol 2.0: read params.task from the raw request JSON
+P:ModelContextProtocol.Protocol.CallToolResult.Task;removed in ModelContextProtocol 2.0: read task from the raw JSON
+P:ModelContextProtocol.Protocol.Tool.Execution;removed in ModelContextProtocol 2.0: read execution from the raw JSON
+P:ModelContextProtocol.Server.McpServerToolCreateOptions.Execution;removed in ModelContextProtocol 2.0
+P:ModelContextProtocol.Server.McpServerOptions.TaskStore;removed in ModelContextProtocol 2.0
+P:ModelContextProtocol.Server.McpServerOptions.SendTaskStatusNotifications;removed in ModelContextProtocol 2.0
+T:ModelContextProtocol.IMcpTaskStore;removed in ModelContextProtocol 2.0
+T:ModelContextProtocol.InMemoryMcpTaskStore;removed in ModelContextProtocol 2.0
+T:ModelContextProtocol.Protocol.McpTaskMetadata;removed in ModelContextProtocol 2.0
+M:ModelContextProtocol.McpJsonUtilities.GetTypeInfo``1(System.Text.Json.JsonSerializerOptions);internal on ModelContextProtocol 1.0.0: use McpJsonUtilities.DefaultOptions.GetTypeInfo(typeof(T))

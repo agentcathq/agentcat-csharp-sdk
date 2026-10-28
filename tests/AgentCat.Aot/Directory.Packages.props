@@ -1,0 +1,6 @@
+<Project>
+  <!-- Stops MSBuild from importing the repository's central package versions: these apps pin their own, as customers do. -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+</Project>

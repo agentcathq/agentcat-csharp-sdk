@@ -1,0 +1,3 @@
+<Project>
+  <!-- Stops MSBuild from importing a Directory.Build.targets from a folder above. -->
+</Project>

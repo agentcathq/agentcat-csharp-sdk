@@ -1,0 +1,145 @@
+=== otlp
+http://c:4318/v1/traces 
+ {"resourceSpans":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"s"}},{"key":"service.version","value":{"stringValue":"unknown"}}]},"scopeSpans":[{"scope":{"name":"agentcat","version":"unknown"},"spans":[{"traceId":"5fbf74784385eeb15609b0fed72cbb30","spanId":"38fbea6b36e16f37","name":"mcp:tools/list","kind":2,"startTimeUnixNano":"1749988805123000000","endTimeUnixNano":"1749988805123000000","attributes":[{"key":"source","value":{"stringValue":"agentcat"}},{"key":"mcp.event_type","value":{"stringValue":"mcp:tools/list"}}],"status":{"code":1}}]}]}]}
+=== dd
+https://http-intake.logs.us3.datadoghq.com/api/v2/logs 
+ [{"message":"mcp:tools/list - unknown","service":"svc","ddsource":"agentcat","ddtags":"event_type:mcp:tools.list,source:agentcat","timestamp":1749988805123,"status":"info","dd":{"trace_id":"16140858155396737714","span_id":"4106133231481483063"},"mcp":{"session_id":"","event_id":"evt_2yXlTL6bElM5Whm0HjT0Iz8LL0M","event_type":"mcp:tools/list","duration_ms":0,"server_name":"s"}}]
+https://api.us3.datadoghq.com/api/v1/series 
+ {"series":[{"metric":"mcp.events.count","type":"count","points":[[1749988805,1]],"tags":["service:svc","event_type:mcp:tools.list"]}]}
+=== sentry
+https://o1.ingest.sentry.io/api/42/envelope/ 
+ {"event_id":"38fbea6b36e16f3738fbea6b36e16f37","sent_at":"2026-10-16T15:04:56.819Z"}
+{"type":"log","item_count":1,"content_type":"application/vnd.sentry.items.log+json"}
+{"items":[{"timestamp":1749988805.123,"trace_id":"28e9c43b044f962e403ca154d3f51a05","event_id":"38fbea6b36e16f3738fbea6b36e16f37","level":"info","body":"MCP mcp:tools/list","attributes":{"eventType":{"value":"mcp:tools/list","type":"string"},"serverName":{"value":"s","type":"string"},"duration_ms":{"value":0,"type":"double"}}}]}
+
+=== posthog
+https://us.i.posthog.com/batch 
+ {"api_key":"phc","batch":[{"event":"mcp_tools_list","distinct_id":"anonymous","properties":{"source":"agentcat","duration_ms":0,"server_name":"s"},"timestamp":"2025-06-15T12:00:05.123Z","type":"capture"}]}
+OTLP fractional duration: Error: OTLP export error: RangeError: The number 1.5 cannot be converted to a BigInt because it is not an integer
+OTLP 404: Error: OTLP export error: Error: OTLP export failed: 404 Not Found
+=== diagnostics
+https://otel.agentcat.com/v1/logs {"Content-Type":"application/json","Authorization":"Bearer dgk_sdk_diag_3f9a2c7e1b8d4065af2e9c1d7b6a4f80"} 
+ {
+ "resourceLogs": [
+  {
+   "resource": {
+    "attributes": [
+     {
+      "key": "agentcat.install_id",
+      "value": {
+       "stringValue": "266ae12fc3483b53"
+      }
+     },
+     {
+      "key": "agentcat.sdk.language",
+      "value": {
+       "stringValue": "typescript"
+      }
+     },
+     {
+      "key": "agentcat.sdk.version",
+      "value": {
+       "stringValue": "2.1.1-beta.1"
+      }
+     },
+     {
+      "key": "process.runtime.name",
+      "value": {
+       "stringValue": "nodejs"
+      }
+     },
+     {
+      "key": "process.runtime.version",
+      "value": {
+       "stringValue": "v22.23.2"
+      }
+     },
+     {
+      "key": "process.pid",
+      "value": {
+       "stringValue": "2110373"
+      }
+     },
+     {
+      "key": "os.type",
+      "value": {
+       "stringValue": "linux"
+      }
+     },
+     {
+      "key": "os.version",
+      "value": {
+       "stringValue": "7.0.0-1012-aws"
+      }
+     },
+     {
+      "key": "host.arch",
+      "value": {
+       "stringValue": "arm64"
+      }
+     },
+     {
+      "key": "host.cpu.count",
+      "value": {
+       "stringValue": "4"
+      }
+     }
+    ]
+   },
+   "scopeLogs": [
+    {
+     "scope": {
+      "name": "agentcat-diagnostics",
+      "version": "2.1.1-beta.1"
+     },
+     "logRecords": [
+      {
+       "timeUnixNano": "1792163096821000000",
+       "severityNumber": 13,
+       "severityText": "WARN",
+       "body": {
+        "stringValue": "[2026-10-16T15:04:56.821Z] [sdk=2.1.1-beta.1 node=v22.23.2 mcp=unknown] Warning: something"
+       },
+       "attributes": [
+        {
+         "key": "agentcat.sdk.version",
+         "value": {
+          "stringValue": "2.1.1-beta.1"
+         }
+        },
+        {
+         "key": "process.runtime.version",
+         "value": {
+          "stringValue": "v22.23.2"
+         }
+        }
+       ]
+      },
+      {
+       "timeUnixNano": "1792163096822000000",
+       "severityNumber": 9,
+       "severityText": "INFO",
+       "body": {
+        "stringValue": "[2026-10-16T15:04:56.822Z] [sdk=2.1.1-beta.1 node=v22.23.2 mcp=unknown] Successfully sent event evt_1 | mcp:tools/call | session ses_1 | proj_1 | 12 ms | user@example.com"
+       },
+       "attributes": [
+        {
+         "key": "agentcat.sdk.version",
+         "value": {
+          "stringValue": "2.1.1-beta.1"
+         }
+        },
+        {
+         "key": "process.runtime.version",
+         "value": {
+          "stringValue": "v22.23.2"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,61 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>netstandard2.0;net8.0;net10.0</TargetFrameworks>
+    <PackageId>AgentCat</PackageId>
+    <Description>AgentCat analytics for Model Context Protocol (MCP) servers built on the official C# MCP SDK.</Description>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <EnablePackageValidation>true</EnablePackageValidation>
+    <!-- CI restores in locked mode. After a package version changes, regenerate packages.lock.json with
+         `dotnet restore src/AgentCat/AgentCat.csproj -p:RestoreForceEvaluate=true` and commit it. -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+  <PropertyGroup Condition="$([MSBuild]::IsTargetFrameworkCompatible('$(TargetFramework)', 'net8.0'))">
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+  <!-- The package readme is a plain Markdown copy of README.md: nuget.org shows no raw HTML, no GitHub alerts and no
+       relative links. .github/scripts/nuget_readme.py writes and checks it before the pack, which needs Python 3.8+
+       (-p:AgentCatPython=<path> picks another interpreter). -->
+  <PropertyGroup>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <AgentCatReadme>$([MSBuild]::NormalizePath('$(MSBuildThisFileDirectory)', '..', '..', 'README.md'))</AgentCatReadme>
+    <AgentCatReadmeScript>$([MSBuild]::NormalizePath('$(MSBuildThisFileDirectory)', '..', '..', '.github', 'scripts', 'nuget_readme.py'))</AgentCatReadmeScript>
+    <AgentCatNuGetReadme>$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '$(BaseIntermediateOutputPath)nuget', 'README.md'))</AgentCatNuGetReadme>
+    <AgentCatPython Condition="'$(AgentCatPython)' == '' and '$(OS)' == 'Windows_NT'">python</AgentCatPython>
+    <AgentCatPython Condition="'$(AgentCatPython)' == ''">python3</AgentCatPython>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="$(AgentCatNuGetReadme)" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
+  <Target Name="GenerateAgentCatNuGetReadme" BeforeTargets="GenerateNuspec" Inputs="$(AgentCatReadme);$(AgentCatReadmeScript)" Outputs="$(AgentCatNuGetReadme)">
+    <Exec Command="&quot;$(AgentCatPython)&quot; -c &quot;import sys; sys.exit(sys.version_info &lt; (3, 8))&quot;" IgnoreExitCode="true" IgnoreStandardErrorWarningFormat="true" StandardOutputImportance="low" StandardErrorImportance="low">
+      <Output TaskParameter="ExitCode" PropertyName="_AgentCatPythonExitCode" />
+    </Exec>
+    <Error Condition="'$(_AgentCatPythonExitCode)' != '0'" Text="Packing AgentCat needs Python 3.8 or later to write the nuget.org readme (.github/scripts/nuget_readme.py), but '$(AgentCatPython)' did not run as one (exit code $(_AgentCatPythonExitCode)). Install Python 3.8 or later, or name its interpreter with -p:AgentCatPython=&lt;path&gt;." />
+    <Exec Command="&quot;$(AgentCatPython)&quot; &quot;$(AgentCatReadmeScript)&quot; generate &quot;$(AgentCatReadme)&quot; &quot;$(AgentCatNuGetReadme)&quot;" />
+  </Target>
+  <ItemGroup>
+    <PackageReference Include="ModelContextProtocol" />
+    <PackageReference Include="AgentCat.Api" />
+    <!-- Raises the Microsoft.Bcl.Memory that ModelContextProtocol brings to netstandard2.0 past advisory GHSA-73j8-2gch-69rq. -->
+    <PackageReference Include="Microsoft.Bcl.Memory" Condition="'$(TargetFramework)' == 'netstandard2.0'" />
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" PrivateAssets="all" />
+  </ItemGroup>
+  <!-- IsAotCompatible makes the SDK reference Microsoft.NET.ILLink.Tasks, the trim and AOT analyzers, at the version
+       that the SDK in use bundles, so every SDK patch would change packages.lock.json and fail the locked restore. The
+       SDK adds that reference only when the project has none, so this one takes its place and its versions come from
+       Directory.Packages.props. PrivateAssets keeps it out of the package. To take newer analyzers, raise both versions
+       there to the ones that a newer SDK bundles (the KnownILLinkPack items of its
+       Microsoft.NETCoreSdk.BundledVersions.props), regenerate packages.lock.json, and check that the Release build has
+       no warnings. -->
+  <ItemGroup Condition="'$(IsAotCompatible)' == 'true'">
+    <PackageReference Include="Microsoft.NET.ILLink.Tasks" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)../../BannedSymbols.txt" />
+    <InternalsVisibleTo Include="AgentCat.Tests" Key="$(AgentCatPublicKey)" />
+    <InternalsVisibleTo Include="AgentCat.Tests.StdioServer" Key="$(AgentCatPublicKey)" />
+  </ItemGroup>
+</Project>

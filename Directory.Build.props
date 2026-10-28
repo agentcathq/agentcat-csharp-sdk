@@ -1,0 +1,28 @@
+<Project>
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true' or '$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>$(MSBuildThisFileDirectory)AgentCat.snk</AssemblyOriginatorKeyFile>
+    <VersionPrefix>0.1.0</VersionPrefix>
+    <VersionSuffix>preview.1</VersionSuffix>
+    <AssemblyVersion>$([System.Version]::Parse('$(VersionPrefix)').Major).0.0.0</AssemblyVersion>
+    <FileVersion>$(VersionPrefix).0</FileVersion>
+    <Authors>AgentCat, Inc.</Authors>
+    <Company>AgentCat, Inc.</Company>
+    <Copyright>Copyright (c) AgentCat, Inc.</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/agentcathq/agentcat-csharp-sdk</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/agentcathq/agentcat-csharp-sdk</RepositoryUrl>
+    <PackageTags>mcp;model-context-protocol;analytics;agentcat;ai;llm</PackageTags>
+    <NuGetAudit>true</NuGetAudit>
+    <NuGetAuditMode>all</NuGetAuditMode>
+    <WarningsAsErrors>$(WarningsAsErrors);NU1901;NU1902;NU1903;NU1904</WarningsAsErrors>
+    <AgentCatPublicKey>0024000004800000940000000602000000240000525341310004000001000100c90cb91f8ded4816d2603ce65ee5fd0b12d65c02f792c975b1833621776cf8709f00510f42b1658eb0b1816449312f7cd515655c7796c2b64b9cb9275695df2b7405dbd03368b3e2d80a75c651375307928ac27f602fe57f636249bcf6736f48f2f70a253b3ae5598f99a58d645e1a51ee4b82a31981f42d504bc4da7e3766ba</AgentCatPublicKey>
+  </PropertyGroup>
+</Project>

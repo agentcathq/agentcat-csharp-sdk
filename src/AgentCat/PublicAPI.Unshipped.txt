@@ -1,0 +1,182 @@
+#nullable enable
+AgentCat.AgentCatEvent
+AgentCat.AgentCatEvent.AgentCatEvent() -> void
+AgentCat.AgentCatEvent.AgentCatVersion.get -> string?
+AgentCat.AgentCatEvent.AgentCatVersion.set -> void
+AgentCat.AgentCatEvent.ClientName.get -> string?
+AgentCat.AgentCatEvent.ClientName.set -> void
+AgentCat.AgentCatEvent.ClientVersion.get -> string?
+AgentCat.AgentCatEvent.ClientVersion.set -> void
+AgentCat.AgentCatEvent.Clone() -> AgentCat.AgentCatEvent!
+AgentCat.AgentCatEvent.Duration.get -> int?
+AgentCat.AgentCatEvent.Duration.set -> void
+AgentCat.AgentCatEvent.Error.get -> System.Text.Json.Nodes.JsonNode?
+AgentCat.AgentCatEvent.Error.set -> void
+AgentCat.AgentCatEvent.EventType.get -> string!
+AgentCat.AgentCatEvent.EventType.set -> void
+AgentCat.AgentCatEvent.Id.get -> string!
+AgentCat.AgentCatEvent.Id.set -> void
+AgentCat.AgentCatEvent.IdentifyActorData.get -> System.Text.Json.Nodes.JsonObject?
+AgentCat.AgentCatEvent.IdentifyActorData.set -> void
+AgentCat.AgentCatEvent.IdentifyActorGivenId.get -> string?
+AgentCat.AgentCatEvent.IdentifyActorGivenId.set -> void
+AgentCat.AgentCatEvent.IdentifyActorName.get -> string?
+AgentCat.AgentCatEvent.IdentifyActorName.set -> void
+AgentCat.AgentCatEvent.InputTokens.get -> int?
+AgentCat.AgentCatEvent.InputTokens.set -> void
+AgentCat.AgentCatEvent.IpAddress.get -> string?
+AgentCat.AgentCatEvent.IpAddress.set -> void
+AgentCat.AgentCatEvent.IsError.get -> bool?
+AgentCat.AgentCatEvent.IsError.set -> void
+AgentCat.AgentCatEvent.OutputTokens.get -> int?
+AgentCat.AgentCatEvent.OutputTokens.set -> void
+AgentCat.AgentCatEvent.Parameters.get -> System.Text.Json.Nodes.JsonNode?
+AgentCat.AgentCatEvent.Parameters.set -> void
+AgentCat.AgentCatEvent.ProjectId.get -> string?
+AgentCat.AgentCatEvent.ProjectId.set -> void
+AgentCat.AgentCatEvent.Properties.get -> System.Text.Json.Nodes.JsonObject?
+AgentCat.AgentCatEvent.Properties.set -> void
+AgentCat.AgentCatEvent.ResourceName.get -> string?
+AgentCat.AgentCatEvent.ResourceName.set -> void
+AgentCat.AgentCatEvent.Response.get -> System.Text.Json.Nodes.JsonNode?
+AgentCat.AgentCatEvent.Response.set -> void
+AgentCat.AgentCatEvent.SdkLanguage.get -> string?
+AgentCat.AgentCatEvent.SdkLanguage.set -> void
+AgentCat.AgentCatEvent.ServerName.get -> string?
+AgentCat.AgentCatEvent.ServerName.set -> void
+AgentCat.AgentCatEvent.ServerVersion.get -> string?
+AgentCat.AgentCatEvent.ServerVersion.set -> void
+AgentCat.AgentCatEvent.SessionId.get -> string!
+AgentCat.AgentCatEvent.SessionId.set -> void
+AgentCat.AgentCatEvent.Tags.get -> System.Collections.Generic.IDictionary<string!, string!>?
+AgentCat.AgentCatEvent.Tags.set -> void
+AgentCat.AgentCatEvent.Timestamp.get -> System.DateTimeOffset
+AgentCat.AgentCatEvent.Timestamp.set -> void
+AgentCat.AgentCatEvent.UserIntent.get -> string?
+AgentCat.AgentCatEvent.UserIntent.set -> void
+AgentCat.AgentCatOptions
+AgentCat.AgentCatOptions.AgentCatOptions() -> void
+AgentCat.AgentCatOptions.ApiBaseUrl.get -> string?
+AgentCat.AgentCatOptions.ApiBaseUrl.set -> void
+AgentCat.AgentCatOptions.CustomContextDescription.get -> string?
+AgentCat.AgentCatOptions.CustomContextDescription.set -> void
+AgentCat.AgentCatOptions.EnableAgentTracking.get -> bool
+AgentCat.AgentCatOptions.EnableAgentTracking.set -> void
+AgentCat.AgentCatOptions.EnableReportMissing.get -> bool
+AgentCat.AgentCatOptions.EnableReportMissing.set -> void
+AgentCat.AgentCatOptions.EnableToolCallContext.get -> bool
+AgentCat.AgentCatOptions.EnableToolCallContext.set -> void
+AgentCat.AgentCatOptions.EnableTracing.get -> bool
+AgentCat.AgentCatOptions.EnableTracing.set -> void
+AgentCat.AgentCatOptions.EventProperties.get -> System.Func<AgentCat.AgentCatToolCall!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<System.Text.Json.Nodes.JsonObject?>>?
+AgentCat.AgentCatOptions.EventProperties.set -> void
+AgentCat.AgentCatOptions.EventTags.get -> System.Func<AgentCat.AgentCatToolCall!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<System.Collections.Generic.IReadOnlyDictionary<string!, string!>?>>?
+AgentCat.AgentCatOptions.EventTags.set -> void
+AgentCat.AgentCatOptions.Identify.get -> System.Func<AgentCat.AgentCatToolCall!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<AgentCat.UserIdentity?>>?
+AgentCat.AgentCatOptions.Identify.set -> void
+AgentCat.AgentCatOptions.LogToHost.get -> bool
+AgentCat.AgentCatOptions.LogToHost.set -> void
+AgentCat.AgentCatOptions.RedactEvent.get -> System.Func<AgentCat.AgentCatEvent!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<AgentCat.AgentCatEvent?>>?
+AgentCat.AgentCatOptions.RedactEvent.set -> void
+AgentCat.AgentCatOptions.RedactSensitiveInformation.get -> System.Func<string!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<string!>>?
+AgentCat.AgentCatOptions.RedactSensitiveInformation.set -> void
+AgentCat.AgentCatOptions.DisableDiagnostics.get -> bool
+AgentCat.AgentCatOptions.DisableDiagnostics.set -> void
+AgentCat.AgentCatOptions.DisableShutdownHandlers.get -> bool
+AgentCat.AgentCatOptions.DisableShutdownHandlers.set -> void
+AgentCat.AgentCatOptions.ResolveSessionId.get -> System.Func<AgentCat.AgentCatToolCall!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<string?>>?
+AgentCat.AgentCatOptions.ResolveSessionId.set -> void
+AgentCat.AgentCatSdk
+AgentCat.AgentCatToolCall
+AgentCat.AgentCatToolCall.Arguments.get -> System.Collections.Generic.IReadOnlyDictionary<string!, System.Text.Json.JsonElement>!
+AgentCat.AgentCatToolCall.ClientName.get -> string?
+AgentCat.AgentCatToolCall.ClientVersion.get -> string?
+AgentCat.AgentCatToolCall.Headers.get -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>!
+AgentCat.AgentCatToolCall.Meta.get -> System.Text.Json.Nodes.JsonObject?
+AgentCat.AgentCatToolCall.ProtocolVersion.get -> string?
+AgentCat.AgentCatToolCall.Request.get -> ModelContextProtocol.Server.RequestContext<ModelContextProtocol.Protocol.CallToolRequestParams!>!
+AgentCat.AgentCatToolCall.ToolName.get -> string!
+AgentCat.AgentCatToolCall.TransportSessionId.get -> string?
+AgentCat.AgentCatToolCall.User.get -> System.Security.Claims.ClaimsPrincipal?
+AgentCat.UserIdentity
+AgentCat.UserIdentity.UserData.get -> System.Text.Json.Nodes.JsonObject?
+AgentCat.UserIdentity.UserData.init -> void
+AgentCat.UserIdentity.UserId.get -> string!
+AgentCat.UserIdentity.UserIdentity(string! userId) -> void
+AgentCat.UserIdentity.UserName.get -> string?
+AgentCat.UserIdentity.UserName.init -> void
+static AgentCat.AgentCatSdk.Track(ModelContextProtocol.Server.McpServerOptions? options, string? projectId = null, AgentCat.AgentCatOptions? agentCatOptions = null) -> ModelContextProtocol.Server.McpServerOptions?
+AgentCat.CustomEventData
+AgentCat.CustomEventData.CustomEventData() -> void
+AgentCat.CustomEventData.Duration.get -> int?
+AgentCat.CustomEventData.Duration.set -> void
+AgentCat.CustomEventData.Error.get -> System.Text.Json.Nodes.JsonNode?
+AgentCat.CustomEventData.Error.set -> void
+AgentCat.CustomEventData.IsError.get -> bool?
+AgentCat.CustomEventData.IsError.set -> void
+AgentCat.CustomEventData.Message.get -> string?
+AgentCat.CustomEventData.Message.set -> void
+AgentCat.CustomEventData.Parameters.get -> System.Text.Json.Nodes.JsonNode?
+AgentCat.CustomEventData.Parameters.set -> void
+AgentCat.CustomEventData.Properties.get -> System.Text.Json.Nodes.JsonObject?
+AgentCat.CustomEventData.Properties.set -> void
+AgentCat.CustomEventData.ResourceName.get -> string?
+AgentCat.CustomEventData.ResourceName.set -> void
+AgentCat.CustomEventData.Response.get -> System.Text.Json.Nodes.JsonNode?
+AgentCat.CustomEventData.Response.set -> void
+AgentCat.CustomEventData.SessionId.get -> string?
+AgentCat.CustomEventData.SessionId.set -> void
+AgentCat.CustomEventData.Tags.get -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>?
+AgentCat.CustomEventData.Tags.set -> void
+AgentCat.IAgentCat
+AgentCat.IAgentCat.FlushAsync(System.TimeSpan? timeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+AgentCat.IAgentCat.PublishCustomEventAsync(ModelContextProtocol.Server.McpServer! server, string! projectId, AgentCat.CustomEventData? data = null) -> System.Threading.Tasks.Task!
+AgentCat.IAgentCat.PublishCustomEventAsync(string! sessionId, string! projectId, AgentCat.CustomEventData? data = null) -> System.Threading.Tasks.Task!
+AgentCat.IAgentCat.ShutdownAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+static AgentCat.AgentCatSdk.FlushAsync(System.TimeSpan? timeout = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+static AgentCat.AgentCatSdk.PublishCustomEventAsync(ModelContextProtocol.Server.McpServer! server, string! projectId, AgentCat.CustomEventData? data = null) -> System.Threading.Tasks.Task!
+static AgentCat.AgentCatSdk.PublishCustomEventAsync(string! sessionId, string! projectId, AgentCat.CustomEventData? data = null) -> System.Threading.Tasks.Task!
+static AgentCat.AgentCatSdk.ShutdownAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+Microsoft.Extensions.DependencyInjection.AgentCatMcpServerBuilderExtensions
+static Microsoft.Extensions.DependencyInjection.AgentCatMcpServerBuilderExtensions.WithAgentCat(this Microsoft.Extensions.DependencyInjection.IMcpServerBuilder! builder, string? projectId = null, System.Action<AgentCat.AgentCatOptions!>? configure = null) -> Microsoft.Extensions.DependencyInjection.IMcpServerBuilder!
+AgentCat.AgentCatAssertionException
+AgentCat.AgentCatAssertionException.AgentCatAssertionException(string! message) -> void
+AgentCat.AgentCatFake
+AgentCat.AgentCatFake.AssertCustomEventPublishedAsync(System.Func<AgentCat.AgentCatEvent!, bool>? filter = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+AgentCat.AgentCatFake.AssertNothingTrackedAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+AgentCat.AgentCatFake.AssertTrackedAsync(System.Func<AgentCat.AgentCatEvent!, bool>? filter = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+AgentCat.AgentCatFake.AssertTrackedCountAsync(int count, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+AgentCat.AgentCatFake.Dispose() -> void
+AgentCat.AgentCatFake.GetEventsAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<AgentCat.AgentCatEvent!>!>!
+AgentCat.AgentCatFake.GetLogsAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<string!>!>!
+static AgentCat.AgentCatSdk.Fake() -> AgentCat.AgentCatFake!
+AgentCat.AgentCatExporter
+AgentCat.AgentCatOptions.Exporters.get -> System.Collections.Generic.IDictionary<string!, AgentCat.AgentCatExporter!>!
+AgentCat.DatadogExporter
+AgentCat.DatadogExporter.ApiKey.get -> string!
+AgentCat.DatadogExporter.DatadogExporter(string! apiKey, string! site, string! service) -> void
+AgentCat.DatadogExporter.Env.get -> string?
+AgentCat.DatadogExporter.Env.init -> void
+AgentCat.DatadogExporter.Service.get -> string!
+AgentCat.DatadogExporter.Site.get -> string!
+AgentCat.OtlpExporter
+AgentCat.OtlpExporter.Endpoint.get -> string!
+AgentCat.OtlpExporter.Headers.get -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>?
+AgentCat.OtlpExporter.Headers.init -> void
+AgentCat.OtlpExporter.OtlpExporter(string! endpoint) -> void
+AgentCat.PostHogExporter
+AgentCat.PostHogExporter.ApiKey.get -> string!
+AgentCat.PostHogExporter.EnableAITracing.get -> bool
+AgentCat.PostHogExporter.EnableAITracing.init -> void
+AgentCat.PostHogExporter.Host.get -> string?
+AgentCat.PostHogExporter.Host.init -> void
+AgentCat.PostHogExporter.PostHogExporter(string! apiKey) -> void
+AgentCat.SentryExporter
+AgentCat.SentryExporter.Dsn.get -> string!
+AgentCat.SentryExporter.EnableTracing.get -> bool
+AgentCat.SentryExporter.EnableTracing.init -> void
+AgentCat.SentryExporter.Environment.get -> string?
+AgentCat.SentryExporter.Environment.init -> void
+AgentCat.SentryExporter.Release.get -> string?
+AgentCat.SentryExporter.Release.init -> void
+AgentCat.SentryExporter.SentryExporter(string! dsn) -> void

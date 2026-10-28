@@ -1,0 +1,36 @@
+<Project>
+  <!--
+    Native AOT apps that consume AgentCat as a customer does: from the packed .nupkg, which nuget.config maps from
+    ./packages. This file, Directory.Build.targets and Directory.Packages.props stop MSBuild from importing the
+    repository's own, so no signing, analyzers, warnings as errors or central package versions apply here. The apps are
+    not in AgentCat.slnx.
+
+    To run what the CI job aot runs, from this folder (clang and zlib1g-dev installed; the job takes the package from
+    the pack job's artifact instead of packing):
+    dotnet pack ../../src/AgentCat/AgentCat.csproj -c Release -o packages
+    dotnet publish Stdio -c Release -r linux-x64 -f net10.0 -tl:off -p:AgentCatVersion=<packed version>
+      -p:McpVersion=<ModelContextProtocol version> -o out/stdio | tee publish.log
+    python3 check_warnings.py publish.log
+    python3 drive.py stdio net10.0 out/stdio/AotStdioServer <packed version>
+  -->
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- One warning per trim or AOT problem, with its origin, instead of one summary warning per assembly. -->
+    <TrimmerSingleWarn>false</TrimmerSingleWarn>
+    <!-- Packages restore here, not into the global packages folder, which would keep serving an earlier pack of the
+         same AgentCat version. Delete obj/packages to take a new pack. -->
+    <RestorePackagesPath>$(MSBuildThisFileDirectory)obj/packages/</RestorePackagesPath>
+    <NuGetAudit>false</NuGetAudit>
+  </PropertyGroup>
+
+  <Target Name="RequireAotPackageVersions" BeforeTargets="CollectPackageReferences">
+    <Error Condition="'$(AgentCatVersion)' == ''" Text="Pass -p:AgentCatVersion=&lt;the version of the AgentCat package in packages/&gt;." />
+    <Error Condition="'$(McpVersion)' == ''" Text="Pass -p:McpVersion=&lt;the ModelContextProtocol version&gt;." />
+  </Target>
+</Project>

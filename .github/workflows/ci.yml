@@ -1,0 +1,377 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # release.yml runs this whole workflow before it publishes.
+  workflow_call:
+  schedule:
+    # Daily, so a new ModelContextProtocol release is tested even when nothing is pushed.
+    - cron: '23 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: 1
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - run: dotnet build -c Release -p:RestoreLockedMode=true
+      # One target framework at a time on every OS. Side by side, the test processes of the Windows runner slow each
+      # other down until tests miss their 5 s bounds. The other OSes run the same way, so every OS proves the same thing,
+      # and the coverage job also runs each framework separately.
+      - run: dotnet test -c Release --no-build --max-parallel-test-modules 1
+
+  coverage:
+    name: coverage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - run: dotnet build -c Release -p:RestoreLockedMode=true
+      # One run per framework with its own report: one run over both frameworks overwrites the first report.
+      - name: Collect coverage on net8.0 and net10.0
+        run: |
+          set -euo pipefail
+          for tfm in net8.0 net10.0; do
+            dotnet test --project tests/AgentCat.Tests/AgentCat.Tests.csproj -c Release -f "$tfm" --no-build \
+              --coverage --coverage-output-format cobertura \
+              --coverage-output "$PWD/coverage/$tfm.cobertura.xml" \
+              --coverage-settings coverage.settings.xml
+          done
+      - name: Require 95 % line coverage of the union
+        run: python3 .github/scripts/coverage_gate.py 95 coverage/net8.0.cobertura.xml coverage/net10.0.cobertura.xml
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: coverage
+          path: coverage/*.cobertura.xml
+          if-no-files-found: error
+
+  mcp-discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      versions: ${{ steps.discover.outputs.versions }}
+      aot: ${{ steps.aot.outputs.versions }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The base ModelContextProtocol version from Directory.Packages.props plus the newest patch of every minor above it, from NuGet.
+      - name: Discover ModelContextProtocol versions
+        id: discover
+        run: python3 .github/scripts/discover-mcp-versions.py
+      # The Native AOT job runs the floor and the newest of those versions.
+      - name: Choose the Native AOT versions
+        id: aot
+        env:
+          VERSIONS: ${{ steps.discover.outputs.versions }}
+        run: echo "versions=$(jq -c '[first, last] | unique' <<< "$VERSIONS")" >> "$GITHUB_OUTPUT"
+
+  mcp-versions:
+    name: mcp-versions (${{ matrix.mcp }})
+    needs: mcp-discover
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        mcp: ${{ fromJSON(needs.mcp-discover.outputs.versions) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - run: dotnet test -c Release -p:RestoreLockedMode=true -p:McpTestVersion=${{ matrix.mcp }}
+
+  # Every C# fence of README.md compiles, with warnings as errors, against each ModelContextProtocol version of the
+  # matrix, and the README's RedactEvent sample equals the one in the XML docs (tests/AgentCat.DocsSamples).
+  docs-samples:
+    name: docs-samples (${{ matrix.mcp }})
+    needs: mcp-discover
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        mcp: ${{ fromJSON(needs.mcp-discover.outputs.versions) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - name: Extract the C# fences of README.md
+        run: python3 .github/scripts/docs_samples.py
+      - name: Compile them
+        run: dotnet build tests/AgentCat.DocsSamples -c Release -p:McpTestVersion=${{ matrix.mcp }}
+
+  # The unit tests of the Python scripts in .github/scripts, which run on the real README.md and CHANGELOG.md too.
+  scripts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Test the scripts
+        run: python3 -m unittest discover -s .github/scripts/tests -v
+
+  # The pack writes the nuget.org readme from README.md and fails when it has raw HTML, an alert, a relative link or an
+  # image that nuget.org does not show (.github/scripts/nuget_readme.py).
+  pack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - run: dotnet pack src/AgentCat/AgentCat.csproj -c Release -p:RestoreLockedMode=true -o artifacts
+      - name: Check package dependencies
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          packages=(artifacts/AgentCat.*.nupkg)
+          if [ "${#packages[@]}" -ne 1 ]; then
+            echo "Expected exactly one AgentCat package, found ${#packages[@]}"
+            exit 1
+          fi
+          unzip -p "${packages[0]}" AgentCat.nuspec > "$RUNNER_TEMP/AgentCat.nuspec"
+          python3 - "$RUNNER_TEMP/AgentCat.nuspec" Directory.Packages.props <<'EOF'
+          import sys
+          import xml.etree.ElementTree as ET
+
+          def local(tag):
+              return tag.rsplit("}", 1)[-1]
+
+          # The ModelContextProtocol floor comes from Directory.Packages.props, the same base the MCP version matrix starts from.
+          mcp = [e.get("Version") for e in ET.parse(sys.argv[2]).getroot().iter()
+                 if local(e.tag) == "PackageVersion" and e.get("Include") == "ModelContextProtocol"]
+          if len(mcp) != 1:
+              sys.exit(f"Expected one ModelContextProtocol PackageVersion in {sys.argv[2]}, found {len(mcp)}")
+
+          def pin(name):
+              versions = [e.get("Version") for e in ET.parse(sys.argv[2]).getroot().iter()
+                          if local(e.tag) == "PackageVersion" and e.get("Include") == name]
+              if len(versions) != 1:
+                  sys.exit(f"Expected one {name} PackageVersion in {sys.argv[2]}, found {len(versions)}")
+              return versions[0]
+
+          api = pin("AgentCat.Api")
+          expected = {
+              ".NETStandard2.0": [("AgentCat.Api", api), ("Microsoft.Bcl.Memory", pin("Microsoft.Bcl.Memory")), ("ModelContextProtocol", mcp[0])],
+              "net8.0": [("AgentCat.Api", api), ("ModelContextProtocol", mcp[0])],
+              "net10.0": [("AgentCat.Api", api), ("ModelContextProtocol", mcp[0])],
+          }
+
+          root = ET.parse(sys.argv[1]).getroot()
+          actual = {}
+          for dependencies in (e for e in root.iter() if local(e.tag) == "dependencies"):
+              for child in dependencies:
+                  if local(child.tag) != "group":
+                      actual.setdefault("<no group>", []).append((child.get("id"), child.get("version")))
+                      continue
+                  tfm = child.get("targetFramework")
+                  if tfm in actual:
+                      sys.exit(f"Duplicate dependency group: {tfm}")
+                  actual[tfm] = sorted((d.get("id"), d.get("version")) for d in child if local(d.tag) == "dependency")
+
+          if actual != expected:
+              print(f"Expected dependency groups: {expected}")
+              print(f"Actual dependency groups:   {actual}")
+              sys.exit(1)
+          print(f"Dependency groups match: {actual}")
+          EOF
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: packages
+          path: |
+            artifacts/*.nupkg
+            artifacts/*.snupkg
+          if-no-files-found: error
+
+  # Native AOT apps built from the packed AgentCat, as a customer builds them (tests/AgentCat.Aot): the trim and AOT
+  # warnings of the publish, then the events of a real run against a fake API.
+  aot:
+    name: aot (${{ matrix.app }}, ${{ matrix.tfm }}, ${{ matrix.mcp }})
+    needs: [pack, mcp-discover]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [stdio, http]
+        tfm: [net8.0, net10.0]
+        mcp: ${{ fromJSON(needs.mcp-discover.outputs.aot) }}
+        include:
+          - app: stdio
+            project: Stdio
+            executable: AotStdioServer
+          - app: http
+            project: Http
+            executable: AotHttpServer
+    defaults:
+      run:
+        working-directory: tests/AgentCat.Aot
+    env:
+      APP: ${{ matrix.app }}
+      TFM: ${{ matrix.tfm }}
+      MCP: ${{ matrix.mcp }}
+      PROJECT: ${{ matrix.project }}
+      EXECUTABLE: ${{ matrix.executable }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+      - name: Install the Native AOT toolchain
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: packages
+          path: tests/AgentCat.Aot/packages
+      - name: Publish with Native AOT
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          packages=(packages/AgentCat.*.nupkg)
+          if [ "${#packages[@]}" -ne 1 ]; then
+            echo "Expected exactly one AgentCat package, found ${#packages[@]}"
+            exit 1
+          fi
+          version="$(basename "${packages[0]}" .nupkg)"
+          version="${version#AgentCat.}"
+          echo "AgentCat $version, ModelContextProtocol $MCP"
+          echo "AGENTCAT_VERSION=$version" >> "$GITHUB_ENV"
+          dotnet publish "$PROJECT" -c Release -r linux-x64 -f "$TFM" -tl:off \
+            -p:AgentCatVersion="$version" -p:McpVersion="$MCP" -o "out/$APP" 2>&1 | tee publish.log
+      - name: Allow no trim or AOT warning but the listed ones
+        run: python3 check_warnings.py publish.log
+      - name: Run the app and check its events
+        run: python3 drive.py "$APP" "$TFM" "out/$APP/$EXECUTABLE" "$AGENTCAT_VERSION"
+
+  # The package as a customer first meets it: a new project from the official MCP server template, the packed AgentCat
+  # added from a local folder, one tool call, and the event at a fake API (tests/AgentCat.PackageProbe). The project is
+  # made outside the repository, so none of its build settings apply.
+  package-probe:
+    needs: pack
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PACKED: ${{ github.workspace }}/probe-packed
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: packages
+          path: probe-packed
+      - name: Find the packed version
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          packages=("$PACKED"/AgentCat.*.nupkg)
+          if [ "${#packages[@]}" -ne 1 ]; then
+            echo "Expected exactly one AgentCat package, found ${#packages[@]}"
+            exit 1
+          fi
+          version="$(basename "${packages[0]}" .nupkg)"
+          echo "PROJECT=$RUNNER_TEMP/PackProbe" >> "$GITHUB_ENV"
+          echo "PACKED_NUPKG=${packages[0]}" >> "$GITHUB_ENV"
+          echo "VERSION=${version#AgentCat.}" >> "$GITHUB_ENV"
+      - name: Check the contents of the packed package and its readme
+        run: python3 tests/AgentCat.PackageProbe/probe.py package "$PACKED_NUPKG"
+      - name: Create the project from the MCP server template
+        run: |
+          set -euo pipefail
+          sdk="$(dotnet --version)"
+          echo ".NET SDK $sdk"
+          dotnet new list mcpserver
+          # The SDK's bundled template package, whose version decides the template's ModelContextProtocol version.
+          python3 tests/AgentCat.PackageProbe/probe.py template "$sdk"
+          dotnet new mcpserver -n PackProbe -o "$PROJECT" --no-restore
+      - name: Map AgentCat to the packed folder and add it
+        run: |
+          set -euo pipefail
+          cd "$PROJECT"
+          cat > nuget.config <<EOF
+          <?xml version="1.0" encoding="utf-8"?>
+          <configuration>
+            <config>
+              <add key="globalPackagesFolder" value="packages" />
+            </config>
+            <packageSources>
+              <clear />
+              <add key="packed" value="$PACKED" />
+              <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+            </packageSources>
+            <packageSourceMapping>
+              <clear />
+              <packageSource key="packed">
+                <package pattern="AgentCat" />
+              </packageSource>
+              <packageSource key="nuget.org">
+                <package pattern="*" />
+              </packageSource>
+            </packageSourceMapping>
+          </configuration>
+          EOF
+          python3 "$GITHUB_WORKSPACE/tests/AgentCat.PackageProbe/probe.py" prepare .
+          dotnet add package AgentCat --version "$VERSION"
+      - name: Build, and check that the restore took the packed AgentCat
+        run: |
+          set -euo pipefail
+          cd "$PROJECT"
+          dotnet build -c Release
+          python3 "$GITHUB_WORKSPACE/tests/AgentCat.PackageProbe/probe.py" restored . "$VERSION" "$PACKED"
+      - name: Run the server and check the event
+        run: python3 tests/AgentCat.PackageProbe/probe.py run "$PROJECT/bin/Release/net10.0/linux-x64/PackProbe" "$VERSION"
+
+  all-green:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [test, coverage, mcp-discover, mcp-versions, docs-samples, scripts, pack, aot, package-probe]
+    if: always()
+    steps:
+      - name: Require every job to succeed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          for r in $RESULTS; do
+            if [ "$r" != "success" ]; then
+              echo "A required job finished with result: $r"
+              exit 1
+            fi
+          done

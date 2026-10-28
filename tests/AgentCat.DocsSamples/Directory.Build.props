@@ -1,0 +1,7 @@
+<Project>
+  <!--
+    The README samples compile as a customer's project compiles them: this file, Directory.Build.targets and
+    Directory.Packages.props stop MSBuild from importing the repository's own, so no signing, analyzers or central
+    package versions apply here. The project is not in AgentCat.slnx.
+  -->
+</Project>

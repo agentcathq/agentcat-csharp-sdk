@@ -1,0 +1,300 @@
+{
+  "strings": [
+    {
+      "json": "\"\\u0000\"",
+      "expected": "\"\\u0000\""
+    },
+    {
+      "json": "\"\\u0001\"",
+      "expected": "\"\\u0001\""
+    },
+    {
+      "json": "\"\\u0002\"",
+      "expected": "\"\\u0002\""
+    },
+    {
+      "json": "\"\\u0003\"",
+      "expected": "\"\\u0003\""
+    },
+    {
+      "json": "\"\\u0004\"",
+      "expected": "\"\\u0004\""
+    },
+    {
+      "json": "\"\\u0005\"",
+      "expected": "\"\\u0005\""
+    },
+    {
+      "json": "\"\\u0006\"",
+      "expected": "\"\\u0006\""
+    },
+    {
+      "json": "\"\\u0007\"",
+      "expected": "\"\\u0007\""
+    },
+    {
+      "json": "\"\\u0008\"",
+      "expected": "\"\\b\""
+    },
+    {
+      "json": "\"\\u0009\"",
+      "expected": "\"\\t\""
+    },
+    {
+      "json": "\"\\u000A\"",
+      "expected": "\"\\n\""
+    },
+    {
+      "json": "\"\\u000B\"",
+      "expected": "\"\\u000b\""
+    },
+    {
+      "json": "\"\\u000C\"",
+      "expected": "\"\\f\""
+    },
+    {
+      "json": "\"\\u000D\"",
+      "expected": "\"\\r\""
+    },
+    {
+      "json": "\"\\u000E\"",
+      "expected": "\"\\u000e\""
+    },
+    {
+      "json": "\"\\u000F\"",
+      "expected": "\"\\u000f\""
+    },
+    {
+      "json": "\"\\u0010\"",
+      "expected": "\"\\u0010\""
+    },
+    {
+      "json": "\"\\u0011\"",
+      "expected": "\"\\u0011\""
+    },
+    {
+      "json": "\"\\u0012\"",
+      "expected": "\"\\u0012\""
+    },
+    {
+      "json": "\"\\u0013\"",
+      "expected": "\"\\u0013\""
+    },
+    {
+      "json": "\"\\u0014\"",
+      "expected": "\"\\u0014\""
+    },
+    {
+      "json": "\"\\u0015\"",
+      "expected": "\"\\u0015\""
+    },
+    {
+      "json": "\"\\u0016\"",
+      "expected": "\"\\u0016\""
+    },
+    {
+      "json": "\"\\u0017\"",
+      "expected": "\"\\u0017\""
+    },
+    {
+      "json": "\"\\u0018\"",
+      "expected": "\"\\u0018\""
+    },
+    {
+      "json": "\"\\u0019\"",
+      "expected": "\"\\u0019\""
+    },
+    {
+      "json": "\"\\u001A\"",
+      "expected": "\"\\u001a\""
+    },
+    {
+      "json": "\"\\u001B\"",
+      "expected": "\"\\u001b\""
+    },
+    {
+      "json": "\"\\u001C\"",
+      "expected": "\"\\u001c\""
+    },
+    {
+      "json": "\"\\u001D\"",
+      "expected": "\"\\u001d\""
+    },
+    {
+      "json": "\"\\u001E\"",
+      "expected": "\"\\u001e\""
+    },
+    {
+      "json": "\"\\u001F\"",
+      "expected": "\"\\u001f\""
+    },
+    {
+      "json": "\"\\\"\"",
+      "expected": "\"\\\"\""
+    },
+    {
+      "json": "\"\\\\\"",
+      "expected": "\"\\\\\""
+    },
+    {
+      "json": "\"\\/\"",
+      "expected": "\"/\""
+    },
+    {
+      "json": "\"\\u007F\"",
+      "expected": "\"\""
+    },
+    {
+      "json": "\"\\u2028\"",
+      "expected": "\" \""
+    },
+    {
+      "json": "\"\\u2029\"",
+      "expected": "\" \""
+    },
+    {
+      "json": "\"<>&'\"",
+      "expected": "\"<>&'\""
+    },
+    {
+      "json": "\"\\u00E9\"",
+      "expected": "\"é\""
+    },
+    {
+      "json": "\"\\uD83D\\uDE00\"",
+      "expected": "\"😀\""
+    },
+    {
+      "json": "\"\\uD800\"",
+      "expected": "\"\\ud800\""
+    },
+    {
+      "json": "\"\\uDC00\"",
+      "expected": "\"\\udc00\""
+    },
+    {
+      "json": "\"\\uDC00\\uD800\"",
+      "expected": "\"\\udc00\\ud800\""
+    },
+    {
+      "json": "\"a\\uD800\"",
+      "expected": "\"a\\ud800\""
+    },
+    {
+      "json": "\"\\uD800a\"",
+      "expected": "\"\\ud800a\""
+    }
+  ],
+  "numbers": [
+    {
+      "bits": "0000000000000000",
+      "expected": "0"
+    },
+    {
+      "bits": "8000000000000000",
+      "expected": "0"
+    },
+    {
+      "bits": "3ff0000000000000",
+      "expected": "1"
+    },
+    {
+      "bits": "bff0000000000000",
+      "expected": "-1"
+    },
+    {
+      "bits": "3ff8000000000000",
+      "expected": "1.5"
+    },
+    {
+      "bits": "3fb999999999999a",
+      "expected": "0.1"
+    },
+    {
+      "bits": "3fd3333333333334",
+      "expected": "0.30000000000000004"
+    },
+    {
+      "bits": "3fd5555555555555",
+      "expected": "0.3333333333333333"
+    },
+    {
+      "bits": "4059000000000000",
+      "expected": "100"
+    },
+    {
+      "bits": "4415af1d78b58c40",
+      "expected": "100000000000000000000"
+    },
+    {
+      "bits": "444b1ae4d6e2ef50",
+      "expected": "1e+21"
+    },
+    {
+      "bits": "441ac53a7e04bcda",
+      "expected": "123456789012345680000"
+    },
+    {
+      "bits": "3eb0c6f7a0b5ed8d",
+      "expected": "0.000001"
+    },
+    {
+      "bits": "3e7ad7f29abcaf48",
+      "expected": "1e-7"
+    },
+    {
+      "bits": "3e8421f5f40d8376",
+      "expected": "1.5e-7"
+    },
+    {
+      "bits": "be7ad7f29abcaf48",
+      "expected": "-1e-7"
+    },
+    {
+      "bits": "3c36b082c2148b8e",
+      "expected": "1.23e-18"
+    },
+    {
+      "bits": "4340000000000000",
+      "expected": "9007199254740992"
+    },
+    {
+      "bits": "4340000000000001",
+      "expected": "9007199254740994"
+    },
+    {
+      "bits": "7e37e43c8800759c",
+      "expected": "1e+300"
+    },
+    {
+      "bits": "0000000000000001",
+      "expected": "5e-324"
+    },
+    {
+      "bits": "7fefffffffffffff",
+      "expected": "1.7976931348623157e+308"
+    },
+    {
+      "bits": "7ff8000000000000",
+      "expected": "null"
+    },
+    {
+      "bits": "7ff0000000000000",
+      "expected": "null"
+    },
+    {
+      "bits": "fff0000000000000",
+      "expected": "null"
+    }
+  ],
+  "structures": [
+    {
+      "json": "{\"a\":[1,null,{\"b\":\"c\"}],\"e\":{},\"f\":[]}",
+      "expected": "{\"a\":[1,null,{\"b\":\"c\"}],\"e\":{},\"f\":[]}"
+    },
+    {
+      "json": "{\"k\\\"\\n\\ud800\":[true,false,null]}",
+      "expected": "{\"k\\\"\\n\\ud800\":[true,false,null]}"
+    }
+  ]
+}

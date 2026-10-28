@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- A stdio MCP server on the Generic Host, as the mcpserver template makes it with Native AOT, plus AgentCat. -->
+  <ItemGroup>
+    <PackageReference Include="AgentCat" Version="$(AgentCatVersion)" />
+    <PackageReference Include="ModelContextProtocol" Version="$(McpVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.3" />
+  </ItemGroup>
+</Project>

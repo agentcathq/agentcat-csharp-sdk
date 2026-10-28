@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/AgentCat/AgentCat.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/AgentCat.Tests/AgentCat.Tests.csproj" />
+    <Project Path="tests/AgentCat.Tests.StdioServer/AgentCat.Tests.StdioServer.csproj" />
+  </Folder>
+</Solution>

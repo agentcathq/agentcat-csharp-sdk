@@ -1,0 +1,59 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <TargetFrameworks Condition="'$(OS)' == 'Windows_NT'">$(TargetFrameworks);net472</TargetFrameworks>
+    <IsPackable>false</IsPackable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+  </ItemGroup>
+  <ItemGroup>
+    <AssemblyMetadata Include="ExpectedVersionPrefix" Value="$(VersionPrefix)" />
+    <AssemblyMetadata Include="ExpectedVersionSuffix" Value="$(VersionSuffix)" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(McpTestVersion)' != ''">
+    <PackageReference Include="ModelContextProtocol" VersionOverride="$(McpTestVersion)" />
+    <AssemblyMetadata Include="McpTestVersion" Value="$(McpTestVersion)" />
+  </ItemGroup>
+  <!-- End-to-end lanes: ASP.NET Core in process and the stdio server as a subprocess. .NETCoreApp targets only. -->
+  <ItemGroup Condition="'$(TargetFramework)' != 'net472'">
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" />
+    <ProjectReference Include="../AgentCat.Tests.StdioServer/AgentCat.Tests.StdioServer.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(McpTestVersion)' != '' and '$(TargetFramework)' != 'net472'">
+    <PackageReference Update="ModelContextProtocol.AspNetCore" VersionOverride="$(McpTestVersion)" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net472'">
+    <Compile Remove="E2E/**" />
+    <!-- The lifecycle tests run a Generic Host; the .NETCoreApp targets get it from the ASP.NET Core framework. -->
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="System.Net.Http" Condition="'$(TargetFramework)' == 'net472'" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/AgentCat/AgentCat.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include="Xunit" />
+    <Content Include="Fixtures/**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <!-- Puts the stdio server's dll path (same Configuration and TargetFramework) into the test assembly. -->
+  <Target Name="AddStdioServerPath" BeforeTargets="GetAssemblyAttributes" Condition="'$(TargetFramework)' != 'net472'">
+    <MSBuild Projects="../AgentCat.Tests.StdioServer/AgentCat.Tests.StdioServer.csproj" Targets="GetTargetPath" Properties="TargetFramework=$(TargetFramework)">
+      <Output TaskParameter="TargetOutputs" ItemName="_AgentCatStdioServerDll" />
+    </MSBuild>
+    <ItemGroup>
+      <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+        <_Parameter1>AgentCatStdioServerDll</_Parameter1>
+        <_Parameter2>@(_AgentCatStdioServerDll->'%(FullPath)')</_Parameter2>
+      </AssemblyAttribute>
+    </ItemGroup>
+  </Target>
+</Project>

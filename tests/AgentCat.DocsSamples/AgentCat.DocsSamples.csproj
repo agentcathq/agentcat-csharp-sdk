@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <!--
+    Compiles every C# fence of the repository's README.md against one ModelContextProtocol version, with warnings as
+    errors. The samples are compiled, never run. To run what the CI job docs-samples runs, from the repository root:
+    python3 .github/scripts/docs_samples.py
+    dotnet build tests/AgentCat.DocsSamples -c Release -p:McpTestVersion=<ModelContextProtocol version>
+    The script writes one file per fence to obj/fences; see its header for how it wraps programs and fragments.
+    Program fences compile with the ASP.NET Core shared framework referenced, so a fence that needs a package the
+    README does not name still compiles.
+  -->
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <OutputType>Library</OutputType>
+    <Nullable>enable</Nullable>
+    <!-- The script writes the implicit usings of a console or an ASP.NET Core project into each file, as the fence needs. -->
+    <ImplicitUsings>disable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IsPackable>false</IsPackable>
+    <NuGetAudit>false</NuGetAudit>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="ModelContextProtocol" Version="$(McpTestVersion)" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="$(McpTestVersion)" />
+    <ProjectReference Include="../../src/AgentCat/AgentCat.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <DocsFence Include="$(MSBuildThisFileDirectory)obj/fences/*.cs" />
+    <Compile Include="@(DocsFence)" />
+  </ItemGroup>
+  <Target Name="RequireMcpTestVersion" BeforeTargets="CollectPackageReferences">
+    <Error Condition="'$(McpTestVersion)' == ''" Text="Pass -p:McpTestVersion=&lt;the ModelContextProtocol version&gt;." />
+  </Target>
+  <Target Name="RequireDocsFences" BeforeTargets="CoreCompile">
+    <Error Condition="'@(DocsFence)' == ''" Text="No fence in obj/fences: run python3 .github/scripts/docs_samples.py first." />
+  </Target>
+</Project>

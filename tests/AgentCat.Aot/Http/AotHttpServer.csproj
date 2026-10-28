@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <!-- A stateless HTTP MCP server on ASP.NET Core, as the remote mcpserver template makes it with Native AOT, plus AgentCat. -->
+  <ItemGroup>
+    <PackageReference Include="AgentCat" Version="$(AgentCatVersion)" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="$(McpVersion)" />
+  </ItemGroup>
+</Project>

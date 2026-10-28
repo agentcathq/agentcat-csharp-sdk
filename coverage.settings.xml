@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Configuration>
+  <CodeCoverage>
+    <!--
+      Static instrumentation only: the collector rewrites the test output's AgentCat.dll before the test host starts,
+      and no CLR profiler runs. On Linux x64 the profiler is also on by default, and it instruments the stdio server
+      processes' own copy of AgentCat.dll. The collector names a module's hit buffer after its PDB id, so both copies
+      share one buffer file, with layouts one byte apart. The profiler's registration recreates that file under the
+      running test host, the report then counts lines that no test ran, and when the registration races the host's
+      periodic flush and fails, the report holds no module at all. Arm64 has static instrumentation only, so this also
+      makes every machine measure the same way.
+    -->
+    <EnableDynamicManagedInstrumentation>False</EnableDynamicManagedInstrumentation>
+    <EnableStaticManagedInstrumentation>True</EnableStaticManagedInstrumentation>
+    <ModulePaths>
+      <Include>
+        <ModulePath>.*[/\\]AgentCat\.dll$</ModulePath>
+      </Include>
+    </ModulePaths>
+    <Sources>
+      <Exclude>
+        <Source>.*[/\\]obj[/\\].*</Source>
+      </Exclude>
+    </Sources>
+  </CodeCoverage>
+</Configuration>
