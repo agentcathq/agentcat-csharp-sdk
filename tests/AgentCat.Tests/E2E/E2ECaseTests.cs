@@ -23,7 +23,7 @@ public class E2ECaseTests
 
     private static readonly string[] NotesStructuredKeys = { "mcp_session", "received" };
 
-    private static readonly string[] CustomCallIntents = { "publish with a session", "publish without a session" };
+    private static readonly string[] CustomCallIntents = { "publish with a sid", "publish without a sid" };
 
     // How long a concurrent test's calls wait inside a tool for each other.
     private static readonly TimeSpan OverlapBound = TimeSpan.FromSeconds(5);
@@ -261,7 +261,7 @@ public class E2ECaseTests
 
     // A tool publishes a custom event through the McpServer it was given. On the stateless lanes that server's options
     // were built for this POST alone, and the event must still find the tracker: the tracked project, the server
-    // identity and the caller's session.
+    // identity and the session, the caller's sid or else the session of the tool call.
     [Theory]
     [MemberData(nameof(LaneData.AllLanes), MemberType = typeof(LaneData))]
     public async Task Custom_event_from_a_tool_reaches_the_tracker_on_every_lane(string lane)
@@ -270,11 +270,12 @@ public class E2ECaseTests
         var sid = ToolResults.Sid("customtool");
         var known = e2e.Lane.KnowsClientIdentity;
 
-        var first = await e2e.CallToolAsync("custom", "{\"sid\":\"" + sid + "\",\"context\":\"publish with a session\"}");
+        var first = await e2e.CallToolAsync("custom", "{\"sid\":\"" + sid + "\",\"context\":\"publish with a sid\"}");
         var other = e2e.Lane.IsHttp ? await e2e.ConnectClientAsync() : e2e.Client;
-        var second = await e2e.CallToolAsync("custom", """{"context":"publish without a session"}""", other);
+        var second = await e2e.CallToolAsync("custom", """{"context":"publish without a sid"}""", other);
         Assert.Equal(E2EToolkit.CustomReply, ToolResults.ToolText(first));
         Assert.Equal(E2EToolkit.CustomReply, ToolResults.ToolText(second));
+        var minted = E2EAssert.SessionId(ToolResults.HandleFrom(ToolResults.MintBackOf(second)!, "session_id"));
 
         await e2e.AssertEventCountAsync(4);
         var custom = e2e.Events.Where(e => e.EventType == WireNames.CustomEventType).ToArray();
@@ -289,7 +290,7 @@ public class E2ECaseTests
             Assert.Equal(known ? Lanes.ClientName : null, e.ClientName);
         });
         Assert.Single(custom, e => e.SessionId == sid);
-        Assert.Single(custom, e => e.Has("session_id") && e.SessionId is null);
+        Assert.Single(custom, e => e.SessionId == minted);
 
         var calls = e2e.Events.Where(e => e.EventType == WireNames.ToolCallEventType).ToArray();
         Assert.Equal(2, calls.Length);
@@ -299,13 +300,40 @@ public class E2ECaseTests
             Assert.Equal(E2EToolkit.ProjectId, e.ProjectId);
         });
         Assert.Equal(CustomCallIntents, calls.Select(e => e.UserIntent).Order(StringComparer.Ordinal));
+        Assert.Equal(minted, Assert.Single(calls, e => e.UserIntent == "publish without a sid").SessionId);
 
         if (e2e.Lane.IsHttp)
         {
             Assert.Single(e2e.Log, l => l == "Published custom event for session " + sid + " with type 'agentcat:custom'");
-            Assert.Single(e2e.Log, l => l == "Published custom event without a session with type 'agentcat:custom'");
+            Assert.Single(e2e.Log, l => l == "Published custom event for session " + minted + " with type 'agentcat:custom'");
             Assert.DoesNotContain(e2e.Log, l => l.StartsWith("Warning", StringComparison.Ordinal));
+            Assert.DoesNotContain(e2e.Log, l => l.StartsWith("publishCustomEvent:", StringComparison.Ordinal));
         }
+    }
+
+    // A stateless server builds a new server for every POST. The agent opens a task, then sends the issued session to a
+    // tool that publishes a custom event without a sid: the two tool calls and the custom event share that session.
+    [Theory]
+    [MemberData(nameof(LaneData.StatelessLanes), MemberType = typeof(LaneData))]
+    public async Task Custom_event_from_a_tool_joins_the_session_of_its_tool_call_on_a_stateless_server(string lane)
+    {
+        await using var e2e = await Lanes.Get(lane).StartAsync(Scenarios.BaselineDefaults);
+
+        var opened = await e2e.CallToolAsync("echo", """{"msg":"open","context":"open the task","session_id":"start"}""");
+        var sessionId = E2EAssert.SessionId(ToolResults.HandleFrom(ToolResults.MintBackOf(opened)!, "session_id"));
+        var completed = await e2e.CallToolAsync("custom", "{\"context\":\"complete the task\",\"session_id\":\"" + sessionId + "\"}");
+        Assert.Equal(E2EToolkit.CustomReply, ToolResults.ToolText(completed));
+        Assert.Null(ToolResults.MintBackOf(completed));
+
+        await e2e.AssertEventCountAsync(3);
+        Assert.All(e2e.Events, e => Assert.Equal(sessionId, e.SessionId));
+        Assert.Equal("open the task", Assert.Single(e2e.Events, e => e.ResourceName == "echo").UserIntent);
+        Assert.Equal("complete the task", Assert.Single(e2e.Events, e => e.EventType == WireNames.ToolCallEventType && e.ResourceName == "custom").UserIntent);
+        var custom = Assert.Single(e2e.Events, e => e.EventType == WireNames.CustomEventType);
+        Assert.Equal(E2EToolkit.CustomResourceName, custom.ResourceName);
+        Assert.Equal(E2EToolkit.ProjectId, custom.ProjectId);
+        Assert.Single(e2e.Log, l => l == "Published custom event for session " + sessionId + " with type 'agentcat:custom'");
+        Assert.DoesNotContain(e2e.Log, l => l.StartsWith("publishCustomEvent:", StringComparison.Ordinal));
     }
 
     // Two servers in one process, each tracked under its own project: a custom event from a tool reaches the tracker of

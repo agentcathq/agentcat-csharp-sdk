@@ -143,7 +143,9 @@ internal sealed class CallToolSeam
 
         try
         {
-            result = await next(context, cancellationToken).ConfigureAwait(false);
+            result = call is null
+                ? await next(context, cancellationToken).ConfigureAwait(false)
+                : await RunEnclosedAsync(next, context, call, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -163,6 +165,18 @@ internal sealed class CallToolSeam
         }
 
         return call is null ? result : Finish(tracker, context, name, call, result, !taskAugmented);
+    }
+
+    // The handler, and the work it starts, run with the call as their enclosing tool call. The value lives in this
+    // method's execution context only, so it never reaches the post-handler stages or the code that invoked the seam.
+    private static async ValueTask<CallToolResult> RunEnclosedAsync(
+        McpRequestHandler<CallToolRequestParams, CallToolResult> next,
+        RequestContext<CallToolRequestParams> context,
+        ToolCallEvent call,
+        CancellationToken cancellationToken)
+    {
+        EnclosingToolCall.Enter(context.Server, call.Resolution, call.Hooks);
+        return await next(context, cancellationToken).ConfigureAwait(false);
     }
 
     private static ToolCallEvent? Prepare(AgentCatTracker tracker, RequestContext<CallToolRequestParams> context, string? name, DateTimeOffset start)

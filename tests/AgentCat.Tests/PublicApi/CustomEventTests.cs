@@ -6,7 +6,10 @@ using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using AgentCat.Internal.Delivery;
 using AgentCat.Internal.Engine;
+using AgentCat.Internal.Ids;
+using AgentCat.Internal.Logging;
 using AgentCat.Internal.Runtime;
+using AgentCat.Internal.Text;
 using AgentCat.Tests.TestSupport;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
@@ -47,6 +50,43 @@ public class CustomEventTests
     {
         await h.FlushAsync();
         return Assert.Single(h.Sender.Sent);
+    }
+
+    // A tracked server with one tool, complete_task, that runs publish with the McpServer it receives. The default
+    // publish uses the server form without a SessionId.
+    private static async Task<EngineHarness> TaskServerAsync(AgentCatOptions? options = null, Func<AgentCatClient, McpServer, Task>? publish = null)
+    {
+        var h = new EngineHarness("proj_tracked", options);
+        var client = new AgentCatClient(h.Runtime);
+        publish ??= (c, server) => c.PublishCustomEventAsync(server, "proj_caller", new CustomEventData { ResourceName = "task_completed" });
+        h.AddTool(
+            async (McpServer server, string task) =>
+            {
+                await publish(client, server);
+                return "completed:" + task;
+            },
+            "complete_task");
+        h.Configure(o => o.ServerInfo = Info("""{"name":"tracked-server","version":"2.4.6"}"""));
+        await h.StartAsync();
+        return h;
+    }
+
+    private static string WithSession(string sessionId) => "{\"task\":\"t1\",\"session_id\":" + JsonSerializer.Serialize(sessionId) + "}";
+
+    private static async Task<(AgentCatEvent Call, AgentCatEvent Custom)> CallAndCustomAsync(EngineHarness h)
+    {
+        await h.FlushAsync();
+        return (
+            Assert.Single(h.Sender.Sent, e => e.EventType == WireNames.ToolCallEventType),
+            Assert.Single(h.Sender.Sent, e => e.EventType == WireNames.CustomEventType));
+    }
+
+    // The ID in the session text that AgentCat puts first in the result of a call that starts a task.
+    private static string MintedIdOf(CallToolResult result)
+    {
+        const string prefix = "session_id: ";
+        var text = Assert.IsType<TextContentBlock>(result.Content[0]).Text;
+        return Assert.Single(text.Split('\n'), line => line.StartsWith(prefix, StringComparison.Ordinal)).Substring(prefix.Length);
     }
 
     // Tags and properties on the server form.
@@ -340,6 +380,218 @@ public class CustomEventTests
         Assert.Contains("Warning: Failed to publish custom event - InvalidOperationException: tags boom", h.Log.Lines);
         Assert.Empty(other.Lines);
         Assert.DoesNotContain(h.Log.Lines, l => l.StartsWith("Published custom event", StringComparison.Ordinal));
+    }
+
+    // Server form inside a tool call.
+
+    [Fact]
+    public async Task Joins_the_session_of_the_enclosing_tool_call_when_no_sessionId_is_given()
+    {
+        await using var h = await TaskServerAsync();
+        var issued = SessionIds.NewSessionId(DateTimeOffset.UtcNow);
+
+        await h.CallToolAsync("complete_task", WithSession(issued));
+
+        var (call, custom) = await CallAndCustomAsync(h);
+        Assert.Equal(issued, call.SessionId);
+        Assert.Equal(call.SessionId, custom.SessionId);
+        Assert.Equal("task_completed", custom.ResourceName);
+        Assert.Equal("proj_tracked", custom.ProjectId);
+        Assert.Null(custom.Tags);
+        Assert.Null(custom.IdentifyActorGivenId);
+        Assert.DoesNotContain(NoSession, h.Log.Lines);
+        Assert.Contains("Published custom event for session " + issued + " with type 'agentcat:custom'", h.Log.Lines);
+    }
+
+    [Fact]
+    public async Task Joins_the_minted_session_when_the_tool_call_starts_a_new_task()
+    {
+        await using var h = await TaskServerAsync();
+
+        var result = await h.CallToolAsync("complete_task", WithSession("start"));
+
+        var minted = MintedIdOf(result);
+        var (call, custom) = await CallAndCustomAsync(h);
+        Assert.True(SessionIds.IsValid(minted), "minted session: '" + minted + "'");
+        Assert.Equal(minted, call.SessionId);
+        Assert.Equal(minted, custom.SessionId);
+        Assert.Equal("minted", call.Tags![WireNames.TagSessionSource]);
+        Assert.Null(custom.Tags);
+        Assert.DoesNotContain(NoSession, h.Log.Lines);
+        Assert.Contains("Published custom event for session " + minted + " with type 'agentcat:custom'", h.Log.Lines);
+    }
+
+    // One finalization of the hook value per call: the hook returns a value, returns null, settles only after the call
+    // has returned (the publish never waited for it), or never settles within the budget.
+    [Theory]
+    [InlineData("value")]
+    [InlineData("null")]
+    [InlineData("after the call")]
+    [InlineData("over budget")]
+    public async Task Shares_the_hook_mode_session_of_the_enclosing_tool_call(string hook)
+    {
+        var late = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var h = await TaskServerAsync(new AgentCatOptions
+        {
+            ResolveSessionId = (_, _) => hook switch
+            {
+                "value" => new ValueTask<string?>("customer-task-7"),
+                "null" => new ValueTask<string?>((string?)null),
+                _ => new ValueTask<string?>(late.Task),
+            },
+            Identify = (_, _) => new ValueTask<UserIdentity?>(new UserIdentity("user-7")),
+        });
+        if (hook == "over budget")
+        {
+            h.Tracker!.Settings.PendingHookBudget = TimeSpan.FromMilliseconds(200);
+        }
+
+        await h.CallToolAsync("complete_task", """{"task":"t1"}""");
+        if (hook == "after the call")
+        {
+            Assert.False(late.Task.IsCompleted);
+            late.SetResult("customer-task-7");
+        }
+
+        var (call, custom) = await CallAndCustomAsync(h);
+        var derived = hook is "value" or "after the call";
+        Assert.True(SessionIds.IsValid(custom.SessionId), "custom event session: '" + custom.SessionId + "'");
+        Assert.Equal(call.SessionId, custom.SessionId);
+        if (derived)
+        {
+            Assert.Equal(SessionIds.Derive("customer-task-7", "proj_tracked"), custom.SessionId);
+        }
+
+        Assert.Equal(derived ? "hook" : "minted", call.Tags![WireNames.TagSessionSource]);
+        Assert.Equal("user-7", call.IdentifyActorGivenId);
+        Assert.Null(custom.Tags);
+        Assert.Null(custom.IdentifyActorGivenId);
+        Assert.Contains("Published custom event for the session of the current tool call with type 'agentcat:custom'", h.Log.Lines);
+        Assert.DoesNotContain(NoSession, h.Log.Lines);
+        Assert.Equal(
+            hook == "over budget" ? 1 : 0,
+            h.Log.Lines.Count(l => l == "Warning: resolveSessionId hook did not settle within 200ms; publishing event without it"));
+    }
+
+    [Fact]
+    public async Task Joins_the_session_from_async_work_that_the_tool_starts_and_that_publishes_after_the_call_returns()
+    {
+        var token = TestContext.Current.CancellationToken;
+        var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        Task? work = null;
+        await using var h = await TaskServerAsync(publish: (client, server) =>
+        {
+            work = Task.Run(
+                async () =>
+                {
+                    await release.Task;
+                    await client.PublishCustomEventAsync(server, "proj_caller", new CustomEventData { ResourceName = "task_completed" });
+                },
+                token);
+            return Task.CompletedTask;
+        });
+        var issued = SessionIds.NewSessionId(DateTimeOffset.UtcNow);
+
+        await h.CallToolAsync("complete_task", WithSession(issued));
+        await h.FlushAsync();
+        Assert.Single(h.Sender.Sent);
+        release.SetResult(true);
+        await work!;
+
+        var (call, custom) = await CallAndCustomAsync(h);
+        Assert.Equal(issued, call.SessionId);
+        Assert.Equal(issued, custom.SessionId);
+        Assert.DoesNotContain(NoSession, h.Log.Lines);
+    }
+
+    [Fact]
+    public async Task Lets_eventData_sessionId_win_over_the_enclosing_tool_call()
+    {
+        var own = SessionIds.NewSessionId(DateTimeOffset.UtcNow);
+        await using var h = await TaskServerAsync(publish: (client, server) =>
+            client.PublishCustomEventAsync(server, "proj_caller", new CustomEventData { SessionId = own, ResourceName = "task_completed" }));
+        var issued = SessionIds.NewSessionId(DateTimeOffset.UtcNow);
+
+        await h.CallToolAsync("complete_task", WithSession(issued));
+
+        var (call, custom) = await CallAndCustomAsync(h);
+        Assert.NotEqual(issued, own);
+        Assert.Equal(issued, call.SessionId);
+        Assert.Equal(own, custom.SessionId);
+        Assert.Contains("Published custom event for session " + own + " with type 'agentcat:custom'", h.Log.Lines);
+    }
+
+    [Fact]
+    public async Task Publishes_without_a_session_for_a_different_tracked_server_than_the_enclosing_calls()
+    {
+        await using var other = await StartedAsync("proj_other");
+        await using var h = await TaskServerAsync(publish: (client, _) =>
+            client.PublishCustomEventAsync(other.Server, "proj_caller", new CustomEventData { ResourceName = "task_completed" }));
+        var issued = SessionIds.NewSessionId(DateTimeOffset.UtcNow);
+
+        await h.CallToolAsync("complete_task", WithSession(issued));
+
+        await h.FlushAsync();
+        Assert.Equal(issued, Assert.Single(h.Sender.Sent).SessionId);
+        var custom = await OneSentAsync(other);
+        Assert.Equal(WireNames.CustomEventType, custom.EventType);
+        Assert.Equal("proj_other", custom.ProjectId);
+        Assert.Equal("", custom.SessionId);
+        Assert.Contains(other.Log.Written, w => w.Line == NoSession && w.Severity == LogSeverity.Warning);
+        Assert.Contains("Published custom event without a session with type 'agentcat:custom'", other.Log.Lines);
+    }
+
+    [Fact]
+    public async Task Publishes_without_a_session_outside_any_tool_call()
+    {
+        await using var h = await TaskServerAsync(publish: (_, _) => Task.CompletedTask);
+        var issued = SessionIds.NewSessionId(DateTimeOffset.UtcNow);
+        await h.CallToolAsync("complete_task", WithSession(issued));
+
+        await new AgentCatClient(h.Runtime).PublishCustomEventAsync(h.Server, "proj_caller", new CustomEventData { ResourceName = "after_the_call" });
+
+        var (call, custom) = await CallAndCustomAsync(h);
+        Assert.Equal(issued, call.SessionId);
+        Assert.Equal("", custom.SessionId);
+        Assert.Contains(h.Log.Written, w => w.Line == NoSession && w.Severity == LogSeverity.Warning);
+        Assert.Contains("Published custom event without a session with type 'agentcat:custom'", h.Log.Lines);
+    }
+
+    [Fact]
+    public async Task Keeps_the_session_ID_string_form_verbatim_inside_a_tool_call()
+    {
+        await using var h = await TaskServerAsync(publish: async (client, _) =>
+        {
+            await client.PublishCustomEventAsync("user-session-12345", "proj_caller", new CustomEventData { ResourceName = "named" });
+            await client.PublishCustomEventAsync("", "proj_caller", new CustomEventData { ResourceName = "empty" });
+        });
+        var issued = SessionIds.NewSessionId(DateTimeOffset.UtcNow);
+
+        await h.CallToolAsync("complete_task", WithSession(issued));
+
+        await h.FlushAsync();
+        Assert.Equal(issued, Assert.Single(h.Sender.Sent, e => e.EventType == WireNames.ToolCallEventType).SessionId);
+        var custom = h.Sender.Sent.Where(e => e.EventType == WireNames.CustomEventType).ToArray();
+        Assert.Equal("user-session-12345", Assert.Single(custom, e => e.ResourceName == "named").SessionId);
+        Assert.Equal("", Assert.Single(custom, e => e.ResourceName == "empty").SessionId);
+        Assert.Contains("Published custom event for session user-session-12345 with type 'agentcat:custom'", h.Log.Lines);
+        Assert.DoesNotContain(NoSession, h.Log.Lines);
+    }
+
+    [Fact]
+    public async Task Publishes_without_a_session_when_the_enclosing_call_has_an_invalid_session_id()
+    {
+        await using var h = await TaskServerAsync();
+
+        await h.CallToolAsync("complete_task", WithSession("ses_not-a-real-session"));
+
+        var (call, custom) = await CallAndCustomAsync(h);
+        Assert.Equal("", call.SessionId);
+        Assert.Equal("invalid", call.Tags![WireNames.TagSessionSource]);
+        Assert.Equal("", custom.SessionId);
+        Assert.Null(custom.Tags);
+        Assert.DoesNotContain(NoSession, h.Log.Lines);
+        Assert.Contains("Published custom event without a session with type 'agentcat:custom'", h.Log.Lines);
     }
 
     // String form.
