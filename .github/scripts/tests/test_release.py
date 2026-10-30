@@ -120,9 +120,9 @@ class Notes(unittest.TestCase):
 
     def test_the_real_changelog(self):
         changelog = (SCRIPTS.parents[1] / "CHANGELOG.md").read_text(encoding="utf-8")
-        date, body = release.section(changelog, "1.0.0")
+        date, body = release.section(changelog, "1.0.0-beta.1")
         self.assertTrue(date == release.PLACEHOLDER or release._is_date(date), date)
-        self.assertTrue(body.startswith("First release of the AgentCat SDK for C#."), body)
+        self.assertTrue(body.startswith("First release of the AgentCat SDK for C#, as a beta."), body)
         self.assertNotIn("[Unreleased]:", body)
 
 

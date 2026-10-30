@@ -33,7 +33,7 @@ AgentCat is an analytics platform for MCP server owners 🐱. It captures user i
 This SDK also provides a free and simple way to forward telemetry like logs, traces, and errors to any Open Telemetry collector or popular tools like Datadog, Sentry, and PostHog.
 
 ```bash
-dotnet add package AgentCat
+dotnet add package AgentCat --prerelease
 ```
 
 To learn more about us, check us out [here](https://agentcat.com). For detailed guides visit our [documentation](https://docs.agentcat.com).
