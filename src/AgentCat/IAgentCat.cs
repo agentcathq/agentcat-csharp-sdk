@@ -46,7 +46,8 @@ public interface IAgentCat
 
     /// <summary>Publishes a custom event through a server that AgentCat tracks.</summary>
     /// <param name="server">
-    /// A tracked server. Inside a tool, pass the <see cref="McpServer"/> that the tool receives.
+    /// A tracked server. Inside a tool, pass the <see cref="McpServer"/> that the tool receives: the event joins the
+    /// session of the tool call only through that instance.
     /// </param>
     /// <param name="projectId">
     /// A non-empty project ID. The event carries the project ID of the tracked server, not this value.
@@ -55,9 +56,14 @@ public interface IAgentCat
     /// <returns>A task that completes when AgentCat has queued the event, not when it has delivered it.</returns>
     /// <remarks>
     /// <para>
+    /// The session of the event is <see cref="CustomEventData.SessionId"/> when it is not empty. Otherwise, inside a
+    /// tool call that AgentCat traces on this same <paramref name="server"/> (the tool and the work it starts, also
+    /// after the call returns), the event joins the session of that tool call; anywhere else it has no session and
+    /// AgentCat logs a warning.
+    /// </para>
+    /// <para>
     /// The event carries the server and client identity. The <c>RedactEvent</c> hook runs for it, tracing off drops
-    /// it, and a server in telemetry-only mode never sends it. Without <see cref="CustomEventData.SessionId"/> the
-    /// event has no session and AgentCat logs a warning. A literal <see langword="null"/> as <paramref name="server"/>
+    /// it, and a server in telemetry-only mode never sends it. A literal <see langword="null"/> as <paramref name="server"/>
     /// is ambiguous with the string overload. Cast it, and the task faults. If AgentCat was off when a server was set up
     /// in this process, an untracked server does not fault the task: AgentCat logs
     /// <c>Warning: Failed to publish custom event - the server is not tracked (…)</c> instead.
@@ -75,6 +81,22 @@ public interface IAgentCat
     /// (<c>First parameter must be either an MCP server object or a session ID string</c>), or the server is not
     /// tracked (<c>Server is not tracked. Please call agentcat.track() first or provide a session ID string.</c>).
     /// </exception>
+    /// <example>
+    /// A tool that gets <see cref="IAgentCat"/> from dependency injection publishes a custom event into the session of
+    /// its tool call:
+    /// <code>
+    /// [McpServerTool(Name = "complete_task")]
+    /// public static async Task&lt;string&gt; CompleteTask(McpServer server, IAgentCat agentCat, string taskId)
+    /// {
+    ///     await agentCat.PublishCustomEventAsync(server, "proj_123", new CustomEventData
+    ///     {
+    ///         ResourceName = "task_completed",
+    ///         Parameters = new JsonObject { ["taskId"] = taskId },
+    ///     });
+    ///     return "Task " + taskId + " completed";
+    /// }
+    /// </code>
+    /// </example>
     Task PublishCustomEventAsync(McpServer server, string projectId, CustomEventData? data = null);
 
     /// <summary>

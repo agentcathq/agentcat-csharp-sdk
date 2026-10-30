@@ -70,6 +70,8 @@ internal sealed class ToolCallEvent
 
     internal string? UserIntent { get; }
 
+    internal PendingHooks? Hooks => _hooks;
+
     // For a call whose event is never published: stops the hooks that are still running.
     internal void Abandon()
     {

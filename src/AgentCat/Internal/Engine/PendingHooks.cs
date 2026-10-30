@@ -33,6 +33,7 @@ internal sealed class PendingHooks
     private readonly Func<TimeSpan, CancellationToken, Task> _delay;
     private readonly IAgentCatLog _log;
     private readonly IPipelineClock _clock;
+    private string? _mintedSession;
 
     private PendingHooks(TrackerSettings settings, AgentCatToolCall call, IAgentCatLog log, IPipelineClock clock)
     {
@@ -71,6 +72,8 @@ internal sealed class PendingHooks
 
     internal static bool AnyConfigured(TrackerSettings settings) => Count(settings) > 0;
 
+    internal bool ResolvesSession => _session is not null;
+
     internal static PendingHooks? Start(TrackerSettings settings, AgentCatToolCall call, IAgentCatLog log, IPipelineClock clock)
         => AnyConfigured(settings) ? new PendingHooks(settings, call, log, clock) : null;
 
@@ -94,14 +97,7 @@ internal sealed class PendingHooks
             var tags = SettleAsync(_tags, TagsLabel, cancellationToken);
             var properties = SettleAsync(_properties, PropertiesLabel, cancellationToken);
             var settled = Task.WhenAll(session, identity, tags, properties);
-            if (!settled.IsCompleted)
-            {
-                // A hook can settle on a customer thread; the pipeline stages that follow must not run there.
-                var resumed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-                _ = ResumeAfterAsync(settled, resumed);
-                await resumed.Task.ConfigureAwait(false);
-            }
-
+            await ResumeOffHookThreadAsync(settled).ConfigureAwait(false);
             await settled.ConfigureAwait(false);
             Apply(e, await session.ConfigureAwait(false), await identity.ConfigureAwait(false), await tags.ConfigureAwait(false), await properties.ConfigureAwait(false));
         }
@@ -115,6 +111,15 @@ internal sealed class PendingHooks
             {
             }
         }
+    }
+
+    // The Prepare stage of a custom event that a tool publishes during this call in hook mode. It waits for the hook
+    // within its own budget, as the call's event does, and gets only the session from the call.
+    internal async ValueTask ApplySessionAsync(AgentCatEvent e, CancellationToken cancellationToken)
+    {
+        var hookValue = SettleAsync(_session, SessionLabel, cancellationToken);
+        await ResumeOffHookThreadAsync(hookValue).ConfigureAwait(false);
+        e.SessionId = SessionOf(await hookValue.ConfigureAwait(false), e).SessionId;
     }
 
     private static int Count(TrackerSettings settings)
@@ -146,10 +151,37 @@ internal sealed class PendingHooks
         }
     }
 
+    // A hook can settle on a customer thread; the pipeline stages that follow must not run there.
+    private static async Task ResumeOffHookThreadAsync(Task settled)
+    {
+        if (settled.IsCompleted)
+        {
+            return;
+        }
+
+        var resumed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _ = ResumeAfterAsync(settled, resumed);
+        await resumed.Task.ConfigureAwait(false);
+    }
+
     private static async Task ResumeAfterAsync(Task settled, TaskCompletionSource<bool> resumed)
     {
         await Task.WhenAny(settled).ConfigureAwait(false);
         resumed.TrySetResult(true);
+    }
+
+    // The session that an event of this call gets from the hook value it saw. A non-empty value derives the same ID for
+    // every event of the call. Without one (null, a failed hook, or an event whose own budget ran out), every event of
+    // the call gets the one ID that the first of them minted.
+    private (string SessionId, SessionSource Source) SessionOf(string? hookValue, AgentCatEvent e)
+    {
+        var (sessionId, source) = HandleResolver.FromHookValue(
+            hookValue,
+            string.IsNullOrEmpty(e.ProjectId) ? null : e.ProjectId,
+            _clock.UtcNow);
+        return source == SessionSource.Minted
+            ? (Interlocked.CompareExchange(ref _mintedSession, sessionId, null) ?? sessionId, source)
+            : (sessionId, source);
     }
 
     private void Apply(
@@ -161,10 +193,7 @@ internal sealed class PendingHooks
     {
         if (_session is not null)
         {
-            var (sessionId, source) = HandleResolver.FromHookValue(
-                hookValue,
-                string.IsNullOrEmpty(e.ProjectId) ? null : e.ProjectId,
-                _clock.UtcNow);
+            var (sessionId, source) = SessionOf(hookValue, e);
             e.SessionId = sessionId;
             var sdkTags = e.Tags ?? new Dictionary<string, string>(StringComparer.Ordinal);
             sdkTags[WireNames.TagSessionSource] = source.ToWire();

@@ -161,12 +161,33 @@ public static class AgentCatSdk
     /// <see langword="null"/> as the first argument is ambiguous with the string overload: cast it.
     /// </para>
     /// <para>
+    /// The session of the event is <see cref="CustomEventData.SessionId"/> when it is not empty. Otherwise, inside a
+    /// tool call that AgentCat traces on this same <paramref name="server"/> (the tool and the work it starts, also
+    /// after the call returns), the event joins the session of that tool call; anywhere else it has no session and
+    /// AgentCat logs a warning.
+    /// </para>
+    /// <para>
     /// While AgentCat is off, the method checks its arguments, then publishes nothing and writes nothing. The
     /// <c>AGENTCAT_ENABLED</c> environment variable turns AgentCat on (<c>true</c>, <c>1</c>, <c>yes</c> or <c>on</c>) or off
     /// (<c>false</c>, <c>0</c>, <c>no</c> or <c>off</c>). Without it, AgentCat is on, except in a test run (a process that
     /// loads xUnit, NUnit, MSTest or TUnit), where it is off unless an <see cref="AgentCatFake"/> is current.
     /// </para>
     /// </remarks>
+    /// <example>
+    /// A tool publishes a custom event into the session of its tool call:
+    /// <code>
+    /// [McpServerTool(Name = "complete_task")]
+    /// public static async Task&lt;string&gt; CompleteTask(McpServer server, string taskId)
+    /// {
+    ///     await AgentCatSdk.PublishCustomEventAsync(server, "proj_123", new CustomEventData
+    ///     {
+    ///         ResourceName = "task_completed",
+    ///         Parameters = new JsonObject { ["taskId"] = taskId },
+    ///     });
+    ///     return "Task " + taskId + " completed";
+    /// }
+    /// </code>
+    /// </example>
     public static Task PublishCustomEventAsync(McpServer server, string projectId, CustomEventData? data = null)
         => Client.PublishCustomEventAsync(server, projectId, data);
 

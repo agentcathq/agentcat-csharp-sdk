@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A custom event that a tool publishes with `PublishCustomEventAsync(server, …)` and no `SessionId` now joins the session of its tool call: the `session_id` that the agent sent, the session that AgentCat issued for the call, or the session from `ResolveSessionId`. This also covers work that the tool starts and that publishes after the call returns. Before, the event had no session. Outside a tool call it still has none, and AgentCat logs a warning.
+
 ## [1.0.0-beta.1] - 2026-10-30
 
 First release of the AgentCat SDK for C#, as a beta.

@@ -98,14 +98,27 @@ internal sealed class AgentCatClient : IAgentCat
                 return Task.CompletedTask;
             }
 
-            var session = "";
-            if (string.IsNullOrEmpty(data?.SessionId))
+            // Without a SessionId, the event takes the session of the traced tool call of this server that encloses
+            // the caller; in hook mode the pipeline gives it that session.
+            string session;
+            string published;
+            Func<AgentCatEvent, CancellationToken, ValueTask>? prepare = null;
+            if (!string.IsNullOrEmpty(data?.SessionId))
             {
-                runtime.Log.Write(CustomEvent.NoSession, LogSeverity.Warning);
+                session = data!.SessionId!;
+                published = CustomEvent.Published(session);
+            }
+            else if (EnclosingToolCall.Of(server) is { } call)
+            {
+                session = call.SessionId;
+                prepare = call.Prepare;
+                published = prepare is null ? CustomEvent.Published(session) : CustomEvent.PublishedForCurrentCall;
             }
             else
             {
-                session = data!.SessionId!;
+                session = "";
+                runtime.Log.Write(CustomEvent.NoSession, LogSeverity.Warning);
+                published = CustomEvent.Published(session);
             }
 
             var e = CustomEvent.Build(session, data, runtime.Clock.UtcNow, runtime.Log);
@@ -116,8 +129,8 @@ internal sealed class AgentCatClient : IAgentCat
             var client = server.ClientInfo;
             e.ClientName = client?.Name;
             e.ClientVersion = client?.Version;
-            EventPublisher.Publish(runtime, tracker, e, prepare: null, redactStrings: false);
-            runtime.Log.WriteRoutine(CustomEvent.Published(session));
+            EventPublisher.Publish(runtime, tracker, e, prepare, redactStrings: false);
+            runtime.Log.WriteRoutine(published);
         }
         catch (Exception ex)
         {

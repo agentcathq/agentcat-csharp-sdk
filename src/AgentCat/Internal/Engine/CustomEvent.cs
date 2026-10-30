@@ -22,6 +22,9 @@ internal static class CustomEvent
     internal const string NoSession =
         "publishCustomEvent: no sessionId provided; event will be published without a session. Pass eventData.sessionId to attribute it to a task.";
 
+    internal const string PublishedForCurrentCall =
+        "Published custom event for the session of the current tool call with type '" + EventType + "'";
+
     internal static string Published(string sessionId)
         => sessionId.Length > 0
             ? "Published custom event for session " + sessionId + " with type '" + EventType + "'"
