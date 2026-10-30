@@ -8,7 +8,8 @@ public sealed class CustomEventData
 {
     /// <summary>
     /// The session that the event belongs to. When it is <see langword="null"/> or empty, the string form uses its
-    /// first argument as the session, and the server form publishes the event without a session.
+    /// first argument as the session, and the server form uses the session of the enclosing tool call on that server,
+    /// or publishes the event without a session outside such a call.
     /// </summary>
     public string? SessionId { get; set; }
 
