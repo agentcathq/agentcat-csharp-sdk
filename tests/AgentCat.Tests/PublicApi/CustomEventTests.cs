@@ -421,8 +421,8 @@ public class CustomEventTests
         Assert.Contains("Published custom event for session " + minted + " with type 'agentcat:custom'", h.Log.Lines);
     }
 
-    // One finalization of the hook value per call: the hook returns a value, returns null, settles only after the call
-    // has returned (the publish never waited for it), or never settles within the budget.
+    // The hook returns a value, returns null, settles only after the call has returned (the publish never waited for it),
+    // or never settles: each event waits within its own budget, and the events that get no value share one minted ID.
     [Theory]
     [InlineData("value")]
     [InlineData("null")]
@@ -469,8 +469,52 @@ public class CustomEventTests
         Assert.Contains("Published custom event for the session of the current tool call with type 'agentcat:custom'", h.Log.Lines);
         Assert.DoesNotContain(NoSession, h.Log.Lines);
         Assert.Equal(
-            hook == "over budget" ? 1 : 0,
+            hook == "over budget" ? 2 : 0,
             h.Log.Lines.Count(l => l == "Warning: resolveSessionId hook did not settle within 200ms; publishing event without it"));
+    }
+
+    // Each event waits for the hook within its own budget. The custom event's budget ends first and it takes the call's
+    // minted ID; the hook then settles within the tool-call event's budget, which gets the derived ID as it always did.
+    [Fact]
+    public async Task Keeps_the_hook_derived_session_of_the_tool_call_when_a_custom_events_budget_expires_first()
+    {
+        var late = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var budgets = new List<TaskCompletionSource<bool>>();
+        var customBudgetStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var callBudgetStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var h = await TaskServerAsync(
+            new AgentCatOptions { ResolveSessionId = (_, _) => new ValueTask<string?>(late.Task) },
+            async (client, server) =>
+            {
+                await client.PublishCustomEventAsync(server, "proj_caller", new CustomEventData { ResourceName = "task_completed" });
+                await customBudgetStarted.Task;
+            });
+        h.Tracker!.Settings.HookBudgetDelay = (_, _) =>
+        {
+            var budget = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            lock (budgets)
+            {
+                budgets.Add(budget);
+                (budgets.Count == 1 ? customBudgetStarted : callBudgetStarted).TrySetResult(true);
+            }
+
+            return budget.Task;
+        };
+
+        await h.CallToolAsync("complete_task", """{"task":"t1"}""");
+        await FakeAgentCatApi.WithinAsync(callBudgetStarted.Task, FakeAgentCatApi.WaitBound);
+        budgets[0].SetResult(true);
+        await WaitUntilAsync(() => h.Log.Lines.Contains("Warning: resolveSessionId hook did not settle within 30000ms; publishing event without it"));
+        late.SetResult("customer-task-7");
+
+        var (call, custom) = await CallAndCustomAsync(h);
+        Assert.Equal(SessionIds.Derive("customer-task-7", "proj_tracked"), call.SessionId);
+        Assert.Equal("hook", call.Tags![WireNames.TagSessionSource]);
+        Assert.True(SessionIds.IsValid(custom.SessionId), "custom event session: '" + custom.SessionId + "'");
+        Assert.NotEqual(call.SessionId, custom.SessionId);
+        Assert.Null(custom.Tags);
+        Assert.Single(h.Log.Lines, l => l.StartsWith("Warning: resolveSessionId hook did not settle", StringComparison.Ordinal));
+        Assert.Equal(2, budgets.Count);
     }
 
     [Fact]

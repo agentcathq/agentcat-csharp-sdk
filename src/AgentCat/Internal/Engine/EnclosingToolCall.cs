@@ -33,7 +33,7 @@ internal sealed class EnclosingToolCall
     // hook mode, where Prepare gives the session.
     internal string SessionId { get; }
 
-    // Hook mode: the pipeline stage that gives a custom event the session that the call's event gets.
+    // Hook mode: the pipeline stage that gives a custom event its session from the call's hook value.
     internal Func<AgentCatEvent, CancellationToken, ValueTask>? Prepare { get; }
 
     // Makes the call the enclosing call of the caller's async flow from here on. The caller is an async method, which

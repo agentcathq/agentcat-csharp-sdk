@@ -33,8 +33,7 @@ internal sealed class PendingHooks
     private readonly Func<TimeSpan, CancellationToken, Task> _delay;
     private readonly IAgentCatLog _log;
     private readonly IPipelineClock _clock;
-    private readonly object _gate = new();
-    private Task<(string SessionId, SessionSource Source)>? _finalSession;
+    private string? _mintedSession;
 
     private PendingHooks(TrackerSettings settings, AgentCatToolCall call, IAgentCatLog log, IPipelineClock clock)
     {
@@ -93,19 +92,14 @@ internal sealed class PendingHooks
     {
         try
         {
-            var session = _session is null ? null : FinalSessionAsync(e, cancellationToken);
+            var session = SettleAsync(_session, SessionLabel, cancellationToken);
             var identity = SettleAsync(_identity, IdentityLabel, cancellationToken);
             var tags = SettleAsync(_tags, TagsLabel, cancellationToken);
             var properties = SettleAsync(_properties, PropertiesLabel, cancellationToken);
-            var settled = Task.WhenAll(session ?? Task.CompletedTask, identity, tags, properties);
+            var settled = Task.WhenAll(session, identity, tags, properties);
             await ResumeOffHookThreadAsync(settled).ConfigureAwait(false);
             await settled.ConfigureAwait(false);
-            Apply(
-                e,
-                session is null ? null : await session.ConfigureAwait(false),
-                await identity.ConfigureAwait(false),
-                await tags.ConfigureAwait(false),
-                await properties.ConfigureAwait(false));
+            Apply(e, await session.ConfigureAwait(false), await identity.ConfigureAwait(false), await tags.ConfigureAwait(false), await properties.ConfigureAwait(false));
         }
         finally
         {
@@ -119,13 +113,13 @@ internal sealed class PendingHooks
         }
     }
 
-    // The Prepare stage of a custom event that a tool publishes during this call in hook mode: the event gets the session
-    // of the call's event and nothing else from the call.
+    // The Prepare stage of a custom event that a tool publishes during this call in hook mode. It waits for the hook
+    // within its own budget, as the call's event does, and gets only the session from the call.
     internal async ValueTask ApplySessionAsync(AgentCatEvent e, CancellationToken cancellationToken)
     {
-        var session = FinalSessionAsync(e, cancellationToken);
-        await ResumeOffHookThreadAsync(session).ConfigureAwait(false);
-        e.SessionId = (await session.ConfigureAwait(false)).SessionId;
+        var hookValue = SettleAsync(_session, SessionLabel, cancellationToken);
+        await ResumeOffHookThreadAsync(hookValue).ConfigureAwait(false);
+        e.SessionId = SessionOf(await hookValue.ConfigureAwait(false), e).SessionId;
     }
 
     private static int Count(TrackerSettings settings)
@@ -176,35 +170,33 @@ internal sealed class PendingHooks
         resumed.TrySetResult(true);
     }
 
-    // One finalization of the hook value per call, shared by the call's event and the custom events of the call: a hook
-    // that returns null, fails or misses its budget mints one ID for all of them. The first of these events that the
-    // pipeline prepares starts it, and with it the budget.
-    private Task<(string SessionId, SessionSource Source)> FinalSessionAsync(AgentCatEvent e, CancellationToken cancellationToken)
+    // The session that an event of this call gets from the hook value it saw. A non-empty value derives the same ID for
+    // every event of the call. Without one (null, a failed hook, or an event whose own budget ran out), every event of
+    // the call gets the one ID that the first of them minted.
+    private (string SessionId, SessionSource Source) SessionOf(string? hookValue, AgentCatEvent e)
     {
-        lock (_gate)
-        {
-            return _finalSession ??= FinalizeSessionAsync(string.IsNullOrEmpty(e.ProjectId) ? null : e.ProjectId, cancellationToken);
-        }
-    }
-
-    private async Task<(string SessionId, SessionSource Source)> FinalizeSessionAsync(string? projectId, CancellationToken cancellationToken)
-    {
-        var hookValue = await SettleAsync(_session, SessionLabel, cancellationToken).ConfigureAwait(false);
-        return HandleResolver.FromHookValue(hookValue, projectId, _clock.UtcNow);
+        var (sessionId, source) = HandleResolver.FromHookValue(
+            hookValue,
+            string.IsNullOrEmpty(e.ProjectId) ? null : e.ProjectId,
+            _clock.UtcNow);
+        return source == SessionSource.Minted
+            ? (Interlocked.CompareExchange(ref _mintedSession, sessionId, null) ?? sessionId, source)
+            : (sessionId, source);
     }
 
     private void Apply(
         AgentCatEvent e,
-        (string SessionId, SessionSource Source)? session,
+        string? hookValue,
         UserIdentity? user,
         IReadOnlyDictionary<string, string>? customerTags,
         JsonObject? customProperties)
     {
-        if (session is { } final)
+        if (_session is not null)
         {
-            e.SessionId = final.SessionId;
+            var (sessionId, source) = SessionOf(hookValue, e);
+            e.SessionId = sessionId;
             var sdkTags = e.Tags ?? new Dictionary<string, string>(StringComparer.Ordinal);
-            sdkTags[WireNames.TagSessionSource] = final.Source.ToWire();
+            sdkTags[WireNames.TagSessionSource] = source.ToWire();
             e.Tags = sdkTags;
         }
 
