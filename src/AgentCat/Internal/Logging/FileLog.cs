@@ -109,6 +109,7 @@ internal sealed class FileLog : IAgentCatLog
                 }
 
                 var elapsed = Stopwatch.StartNew();
+                var retried = false;
                 while (true)
                 {
                     Stream stream;
@@ -118,12 +119,15 @@ internal sealed class FileLog : IAgentCatLog
                     }
                     catch (IOException e) when (IsSharingConflict(e))
                     {
-                        if (elapsed.Elapsed >= _budget)
+                        // A conflict always gets one retry: a stall of the process, such as a garbage collection or a
+                        // descheduled thread, can use up the budget in the first attempt.
+                        if (retried && elapsed.Elapsed >= _budget)
                         {
                             Interlocked.Increment(ref _droppedLines);
                             return;
                         }
 
+                        retried = true;
                         Thread.Sleep(1);
                         continue;
                     }

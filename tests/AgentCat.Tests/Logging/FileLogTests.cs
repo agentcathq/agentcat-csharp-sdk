@@ -240,6 +240,33 @@ public sealed class FileLogTests : IDisposable
         Assert.Contains(" late\n", File.ReadAllText(path));
     }
 
+    // A stall of the process, such as a garbage collection or a descheduled thread, can outlast the budget during the
+    // first attempt.
+    [Fact]
+    public void A_first_attempt_that_outlasts_the_budget_still_gets_one_retry()
+    {
+        var path = TempPath();
+        var opens = 0;
+        var droppedBefore = FileLog.DroppedLines;
+        var log = new FileLog(path, () => Fixed, p =>
+        {
+            opens++;
+            if (opens == 1)
+            {
+                Thread.Sleep(60);
+                throw SharingConflict();
+            }
+
+            return new FileStream(p, FileMode.OpenOrCreate, FileAccess.Write, FileShare.None);
+        }, TimeSpan.FromMilliseconds(20));
+
+        log.Write("stalled");
+
+        Assert.Equal(2, opens);
+        Assert.Equal(droppedBefore, FileLog.DroppedLines);
+        Assert.Contains(" stalled\n", File.ReadAllText(path));
+    }
+
     // The operating system's own conflict: a stream that holds the file exclusively.
     [Fact]
     public void A_file_held_by_another_stream_drops_the_line_after_the_budget_and_keeps_logging()
