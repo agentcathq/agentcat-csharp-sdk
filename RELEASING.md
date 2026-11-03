@@ -1,29 +1,28 @@
 # Releasing
 
-Pushing a `v*` tag runs `.github/workflows/release.yml`. It checks that the tagged commit is on `main`, that the tag is `v` + the package version, that `CHANGELOG.md` has a dated section for that version, that `PublicAPI.Unshipped.txt` is empty, and that `Directory.Packages.props` does not pin `AgentCat.Api` 0.0.4. It then runs `ci.yml` on every OS, pushes the package and its symbols to nuget.org with trusted publishing, and creates a GitHub release whose notes are the `CHANGELOG.md` section (a prerelease when the version has a suffix). When any job before the push fails, nothing is published.
+## Release a version
 
-## First release (one time, in this order)
+Every change that a user can see adds an entry to the `[Unreleased]` section of `CHANGELOG.md` in its pull request. The release workflow (`.github/workflows/release.yml`) does the rest, in two steps with a pull request between them:
 
-1. Make the repository public.
-2. Set up the gates:
-   - The GitHub environment `release` (Settings, Environments) with a required reviewer, deployment branches and tags "Selected branches and tags" with the tag rule `v*`, and the environment secret `NUGET_USER`, the nuget.org profile name (not the email) of the account that owns `AgentCat`.
-   - A tag ruleset for `v*` that lets only admins create, move or delete those tags.
-   - On nuget.org, a Trusted Publishing policy with Repository Owner `agentcathq`, Repository `agentcat-csharp-sdk`, Workflow File `release.yml` and Environment `release`.
-3. Preview the readme now that the repository is public (before that, its images and badges do not load). Upload the `.nupkg` of a CI `packages` artifact on nuget.org's Upload Package page, read the Readme File section of the preview, and cancel.
-4. Unlist or deprecate `AgentCat` 0.0.1 on nuget.org, the placeholder that reserved the name.
-5. Release `1.0.0-beta.1` with the steps below, which push the tag `v1.0.0-beta.1`.
-6. Release `1.0.0` the same way, and remove `--prerelease` from the install command in `README.md`.
-7. Once nuget.org lists `1.0.0`, merge agentcat-ui PR #255 (the C# pages of docs.agentcat.com).
+1. In GitHub, open **Actions > release > Run workflow** on `main`. Keep `patch`, or type `minor`, `major` or an exact version such as `1.2.0`. The words count from the newest `v*` tag. The first release has no tag yet: it is the version that `Directory.Build.props` holds.
+2. The workflow opens the pull request "Release vX.Y.Z". It sets `VersionPrefix` in `Directory.Build.props`, turns `[Unreleased]` into the dated section of the version, and moves the entries of `src/AgentCat/PublicAPI.Unshipped.txt` to `PublicAPI.Shipped.txt`. It also starts CI on the pull request. An `[Unreleased]` section with no entry, a version that nuget.org already has, or a pin of `AgentCat.Api` 0.0.4 stops the workflow.
+3. Read the pull request, and merge it when CI passes.
+4. The merge starts the workflow again. It waits for CI on the merge commit, and pushes the package and the symbols that this CI run built and tested to nuget.org with trusted publishing. Then it creates the tag `vX.Y.Z` and its GitHub release, with the CHANGELOG section as the notes.
 
-## Each release
+If a step fails, fix the cause and re-run the failed jobs of that run. The push step skips a version that nuget.org already has, and the tag comes last. If nuget.org has the `.nupkg` but not its symbols, push `AgentCat.<version>.snupkg` from the `packages` artifact of the CI run by hand (`dotnet nuget push … --source https://api.nuget.org/v3/index.json` with an API key).
 
-1. On a branch: set the version in `Directory.Build.props` (`VersionPrefix`, and `VersionSuffix` for a preview, empty for a stable release). The tests and the `pack` job read the expected versions from the props files. If you changed a package pin, regenerate `src/AgentCat/packages.lock.json` with `dotnet restore src/AgentCat/AgentCat.csproj -p:RestoreForceEvaluate=true`, because the locked restore of CI fails until you do. In `CHANGELOG.md`, move the entries of `[Unreleased]` under `## [<version>] - YYYY-MM-DD`, add the link reference of `[<version>]` at the bottom, and point the `[Unreleased]` compare link at `v<version>...HEAD`.
-2. Run `python3 .github/scripts/release.py prepare` (or `prepare YYYY-MM-DD` for another day than today, UTC). It fills the date of that section and moves the entries of `src/AgentCat/PublicAPI.Unshipped.txt` to `PublicAPI.Shipped.txt`.
-3. Check that `dotnet build -c Release` has no warnings, commit, and merge the pull request to `main` once CI is green.
-4. Tag the merged commit on `main` and push the tag: `git tag v<version> <commit>` and `git push origin v<version>`.
-5. If the run fails before the push, delete the tag (`git push --delete origin v<version>`), fix, and tag again. After the push started, keep the tag:
-   - If the first push fails because nuget.org already has the version, the package did not come from this run. Find out where it came from before you do anything else.
-   - If the `.nupkg` is on nuget.org but its symbols are not, push `AgentCat.<version>.snupkg` from the run's `packages` artifact by hand (`dotnet nuget push … --source https://api.nuget.org/v3/index.json` with an API key). Then re-run the failed jobs: a re-run skips the package that is already there and creates the GitHub release.
+To run a step of the workflow by hand, use `python3 .github/scripts/release.py prepare <patch | minor | major | X.Y.Z> <YYYY-MM-DD>`, `status` or `notes <X.Y.Z>`. The `scripts` job of CI tests these steps.
+
+The workflow releases `X.Y.Z` versions only, so `Directory.Build.props` sets no `VersionSuffix`. The tests and the `pack` job read the expected version from the props files.
+
+### One-time setup
+
+- In the repository settings, **Actions > General > Allow GitHub Actions to create and approve pull requests** is on, so that the workflow can open the release pull request.
+- The repository has a `release` environment, limited to the `main` branch, with the environment secret `NUGET_USER`: the nuget.org profile name (not the email) of the account that owns `AgentCat`.
+- On nuget.org, a Trusted Publishing policy names the repository owner `agentcathq`, the repository `agentcat-csharp-sdk`, the workflow file `release.yml` and the environment `release`.
+- No ruleset limits who can create `v*` tags, because the workflow creates the tag with its `GITHUB_TOKEN`.
+
+## The package on nuget.org
 
 A version on nuget.org is final: a fix, including a fix of the readme, needs a new version.
 
@@ -31,8 +30,8 @@ The package readme is a plain Markdown copy of `README.md` that the pack writes 
 
 ## The lock file and the SDK
 
-CI restores `src/AgentCat` in locked mode, so a restore that resolves a package version other than the one in `src/AgentCat/packages.lock.json` fails. `Directory.Packages.props` pins the packages that `src/AgentCat` references, `Microsoft.NET.ILLink.Tasks` included. That package holds the trim and AOT analyzers. Without the pin, the SDK references it at the version that the SDK bundles, which changes with every SDK patch, and CI installs the newest SDK patch. To take newer analyzers:
+CI restores `src/AgentCat` in locked mode, so a pull request that changes a package pin must regenerate the lock file (step 3 below). A restore that resolves a package version other than the one in `src/AgentCat/packages.lock.json` fails. `Directory.Packages.props` pins the packages that `src/AgentCat` references, `Microsoft.NET.ILLink.Tasks` included. That package holds the trim and AOT analyzers. Without the pin, the SDK references it at the version that the SDK bundles, which changes with every SDK patch, and CI installs the newest SDK patch. To take newer analyzers:
 
 1. Find the versions that a newer SDK bundles: the `KnownILLinkPack` items for `net8.0` and `net10.0` in `sdk/<version>/Microsoft.NETCoreSdk.BundledVersions.props` of its installation.
 2. Set the two `Microsoft.NET.ILLink.Tasks` versions in `Directory.Packages.props` to them (8.0.x for `net8.0`, 10.0.x for `net10.0`).
-3. Regenerate the lock file as in step 1 of "Each release", and check that `dotnet build -c Release` has no warnings.
+3. Regenerate the lock file with `dotnet restore src/AgentCat/AgentCat.csproj -p:RestoreForceEvaluate=true`, and check that `dotnet build -c Release` has no warnings.

@@ -4,8 +4,6 @@ on:
   push:
     branches: [main]
   pull_request:
-  # release.yml runs this whole workflow before it publishes.
-  workflow_call:
   schedule:
     # Daily, so a new ModelContextProtocol release is tested even when nothing is pushed.
     - cron: '23 4 * * *'
@@ -14,9 +12,12 @@ on:
 permissions:
   contents: read
 
+# A new push to a pull request cancels the older run of that pull request. Every other run (a push to main, a manual
+# run, the daily run) is in the group of its own event and commit, so a run for a later commit never cancels it: every
+# commit on main keeps a finished run, which release.yml waits for.
 concurrency:
-  group: ci-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event_name }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   DOTNET_NOLOGO: 1
