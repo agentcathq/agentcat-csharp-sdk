@@ -9,7 +9,7 @@ Every change that a user can see adds an entry to the `[Unreleased]` section of 
 3. Read the pull request, and merge it when CI passes.
 4. The merge starts the workflow again. It waits for CI on the merge commit, and pushes the package and the symbols that this CI run built and tested to nuget.org with trusted publishing. Then it creates the tag `vX.Y.Z` and its GitHub release, with the CHANGELOG section as the notes.
 
-If a step fails, fix the cause and re-run the failed jobs of that run. The push step skips a version that nuget.org already has, and the tag comes last. If nuget.org has the `.nupkg` but not its symbols, push `AgentCat.<version>.snupkg` from the `packages` artifact of the CI run by hand (`dotnet nuget push … --source https://api.nuget.org/v3/index.json` with an API key).
+If a step fails, fix the cause and re-run the failed jobs of that run. Only the run of the release commit (the merge commit that adds the dated section) publishes, so a later push to `main` cannot publish another commit under that version: its run only warns. A re-run skips a version that nuget.org already has, and the tag comes last. On the first attempt, a version that nuget.org already has stops the push: the package did not come from this run, so find out where it came from before you do anything else. If nuget.org has the `.nupkg` but not its symbols, push `AgentCat.<version>.snupkg` from the `packages` artifact of the CI run by hand (`dotnet nuget push … --source https://api.nuget.org/v3/index.json` with an API key).
 
 To run a step of the workflow by hand, use `python3 .github/scripts/release.py prepare <patch | minor | major | X.Y.Z> <YYYY-MM-DD>`, `status` or `notes <X.Y.Z>`. The `scripts` job of CI tests these steps.
 

@@ -7,10 +7,10 @@ name: release
 #    section of CHANGELOG.md and ships the public API of PublicAPI.Unshipped.txt (`release.py prepare`). A pull request
 #    that GITHUB_TOKEN opens starts no workflow, so the run starts ci.yml on the release branch itself.
 # 2. The merge of that pull request into main publishes the version: when the version of Directory.Build.props has no
-#    tag and CHANGELOG.md has its dated section (`release.py status`), the run waits for the ci.yml run of the merge
-#    commit, pushes the package that this CI run built and tested to nuget.org with trusted publishing, and then creates
-#    the tag vX.Y.Z and its GitHub release. A failed step publishes nothing after it; the tag comes last, so a re-run of
-#    the failed jobs continues the release.
+#    tag and the merge commit is the one that adds its dated section to CHANGELOG.md (`release.py status`), the run
+#    waits for the ci.yml run of the merge commit, pushes the package that this CI run built and tested to nuget.org
+#    with trusted publishing, and then creates the tag vX.Y.Z and its GitHub release. A failed step publishes nothing
+#    after it; the tag comes last, so a re-run of the failed jobs continues the release.
 on:
   workflow_dispatch:
     inputs:
@@ -180,7 +180,8 @@ jobs:
         with:
           # The nuget.org profile name (not the email) of the account that owns AgentCat.
           user: ${{ secrets.NUGET_USER }}
-      # A re-run after a push that went through skips the push. The push sends the .snupkg beside the .nupkg after it;
+      # A re-run after a push that went through skips the push. On the first attempt, a version that nuget.org already
+      # has stops the job, since this run did not put it there. The push sends the .snupkg beside the .nupkg after it;
       # a re-run also skips a .nupkg that nuget.org has but does not list yet.
       - name: Push to nuget.org
         env:
@@ -188,6 +189,10 @@ jobs:
         run: |
           set -euo pipefail
           if curl -sSf "$VERSIONS_URL" | jq -e --arg v "$VERSION" '.versions | index($v)' > /dev/null; then
+            if [ "$GITHUB_RUN_ATTEMPT" -eq 1 ]; then
+              echo "::error::nuget.org already has AgentCat $VERSION, and this run did not push it"
+              exit 1
+            fi
             echo "nuget.org already has AgentCat $VERSION"
             exit 0
           fi

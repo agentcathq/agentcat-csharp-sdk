@@ -246,15 +246,19 @@ class Steps(unittest.TestCase):
     def tearDown(self):
         self.folder.cleanup()
 
+    @staticmethod
+    def environment(**values):
+        """The environment without the GIT_* variables of a git hook, such as GIT_DIR, which point git at the outer
+        repository."""
+        return {**{key: value for key, value in os.environ.items() if not key.startswith("GIT_")}, **values}
+
     def git(self, *arguments):
-        environment = dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
         subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.com", *arguments], cwd=self.root,
-                       check=True, env=environment)
+                       check=True, env=self.environment(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1"))
 
     def step(self, *arguments, actions=False):
-        environment = dict(os.environ, GITHUB_ACTIONS="true" if actions else "false")
         return subprocess.run([sys.executable, str(SCRIPTS / "release.py"), "--root", str(self.root), *arguments],
-                              capture_output=True, text=True, env=environment)
+                              capture_output=True, text=True, env=self.environment(GITHUB_ACTIONS=str(actions).lower()))
 
     def assert_step(self, result, code, out, err=""):
         self.assertEqual((result.returncode, result.stdout, result.stderr), (code, out, err))
@@ -286,6 +290,24 @@ class Steps(unittest.TestCase):
         self.assertEqual(self.props.read_text(encoding="utf-8"), PROPS)
         self.assertIn(f"[1.0.0]: {REPOSITORY}/releases/tag/v1.0.0\n", self.changelog.read_text(encoding="utf-8"))
         self.assert_step(self.step("status"), 0, "1.0.0 publish\n")
+
+    def test_only_the_release_commit_publishes(self):
+        self.git("tag", "v1.0.0")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "work")
+        self.assert_step(self.step("prepare", "minor", "2026-11-03"), 0, "1.1.0\n")
+        self.git("commit", "-q", "-am", "Release v1.1.0")
+        self.assert_step(self.step("status"), 0, "1.1.0 publish\n")
+
+        self.changelog.write_text(DATED.replace("## [Unreleased]\n", "## [Unreleased]\n\n- Thing three.\n"),
+                                  encoding="utf-8")
+        self.git("commit", "-q", "-am", "Later work")
+
+        self.assert_step(self.step("status", actions=True), 0, "1.1.0 skip\n",
+                         "::warning::1.1.0 has a dated section in CHANGELOG.md but no tag v1.1.0: only the run of its "
+                         "release commit publishes it, so re-run the failed jobs of that run\n")
+        self.git("tag", "v1.1.0", "HEAD^1")
+        self.assert_step(self.step("status"), 0, "1.1.0 skip\n")
 
     def test_prepare_stops_without_an_entry_and_changes_nothing(self):
         self.changelog.write_text(DATED, encoding="utf-8")

@@ -10,9 +10,11 @@ Usage:
       yet, the first release is the version that Directory.Build.props holds, whatever the input word. An exact version
       must be newer than the newest tag. An [Unreleased] section with no entry stops the step: a release needs a change.
   release.py status
-      prints '<version> publish' when the version of Directory.Build.props has no tag and CHANGELOG.md has its dated
-      section, else '<version> skip'. A version to publish must also have no unshipped public API and must not pin the
-      AgentCat.Api whose Native AOT warnings tests/AgentCat.Aot/check_warnings.py allows, or the step fails.
+      prints '<version> publish' when the version of Directory.Build.props has no tag and HEAD is its release commit,
+      the commit that adds its dated section to CHANGELOG.md, else '<version> skip'. A later commit gets a warning when
+      the version still has no tag: only the release commit publishes. A version to publish must also have no unshipped
+      public API and must not pin the AgentCat.Api whose Native AOT warnings tests/AgentCat.Aot/check_warnings.py
+      allows, or the step fails.
   release.py notes <X.Y.Z>
       prints the body of the CHANGELOG.md section of that version.
 
@@ -228,12 +230,17 @@ def prepare(root, word, date):
 
 
 def status(root):
-    """The status step: see the usage. Returns '<version> publish' or '<version> skip'."""
+    """The status step: see the usage. Returns ('<version> publish' or '<version> skip', a warning or None)."""
     changelog_path, unshipped_path, _, props_path, packages_path = paths(root)
     version = props_version(read(props_path))
     tagged = f"v{show(version)}" in tags(root)
     if tagged or dated_section(read(changelog_path), version) is None:
-        return f"{show(version)} skip"
+        return f"{show(version)} skip", None
+    previous = parent_changelog(root)
+    if previous is not None and dated_section(previous, version) is not None:
+        return f"{show(version)} skip", (f"{show(version)} has a dated section in CHANGELOG.md but no tag "
+                                         f"v{show(version)}: only the run of its release commit publishes it, so "
+                                         f"re-run the failed jobs of that run")
     problems = []
     left = api_entries(read(unshipped_path))
     if left:
@@ -244,7 +251,7 @@ def status(root):
         problems.append(problem)
     if problems:
         raise ReleaseError(f"{show(version)} cannot be published: " + " ".join(problems))
-    return f"{show(version)} publish"
+    return f"{show(version)} publish", None
 
 
 def notes(root, text):
@@ -260,13 +267,27 @@ def notes(root, text):
 
 def tags(root):
     """The tags of the repository at root."""
+    return git(root, "tag", "--list").stdout.split()
+
+
+def parent_changelog(root):
+    """The CHANGELOG.md of the first parent of HEAD, or None when HEAD has no parent or that commit has no
+    CHANGELOG.md."""
+    if git(root, "rev-parse", "--verify", "--quiet", "HEAD^1", check=False).returncode != 0:
+        return None
+    if git(root, "cat-file", "-e", "HEAD^1:CHANGELOG.md", check=False).returncode != 0:
+        return None
+    return git(root, "show", "HEAD^1:CHANGELOG.md").stdout
+
+
+def git(root, *arguments, check=True):
     try:
-        result = subprocess.run(["git", "tag", "--list"], cwd=root, capture_output=True, text=True)
+        result = subprocess.run(["git", *arguments], cwd=root, capture_output=True, text=True, encoding="utf-8")
     except OSError as error:
         raise ReleaseError(f"Cannot run git: {error}") from error
-    if result.returncode != 0:
-        raise ReleaseError(f"git tag --list failed: {result.stderr.strip()}")
-    return result.stdout.split()
+    if check and result.returncode != 0:
+        raise ReleaseError(f"git {' '.join(arguments)} failed: {result.stderr.strip()}")
+    return result
 
 
 def read(path):
@@ -285,19 +306,20 @@ def run(arguments):
     root = ROOT
     if arguments[:1] == ["--root"] and len(arguments) >= 2:
         root, arguments = Path(arguments[1]), arguments[2:]
+    actions = os.environ.get("GITHUB_ACTIONS") == "true"
     try:
         match arguments:
             case ["prepare", word, date]:
                 return 0, prepare(root, word, date), ""
             case ["status"]:
-                return 0, status(root), ""
+                result, warning = status(root)
+                return 0, result, (("::warning::" if actions else "release: warning: ") + warning) if warning else ""
             case ["notes", version]:
                 return 0, notes(root, version), ""
             case _:
                 return 2, "", USAGE
     except ReleaseError as error:
-        prefix = "::error::" if os.environ.get("GITHUB_ACTIONS") == "true" else "release: "
-        return 1, "", prefix + str(error)
+        return 1, "", ("::error::" if actions else "release: ") + str(error)
 
 
 def main(arguments):
