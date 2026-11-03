@@ -6,7 +6,7 @@ on:
   pull_request:
   schedule:
     # Daily, so a new ModelContextProtocol release is tested even when nothing is pushed.
-    - cron: '23 4 * * *'
+    - cron: '0 2 * * *'
   workflow_dispatch:
 
 permissions:
@@ -24,6 +24,43 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: 1
 
 jobs:
+  # On a pull request, the compat jobs (mcp-versions, docs-samples, aot: the SDK against each ModelContextProtocol
+  # version) run only when the pull request changes SDK code. Every other event runs them.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      sdk: ${{ steps.diff.outputs.sdk }}
+      docs-samples: ${{ steps.diff.outputs.docs-samples }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: github.event_name == 'pull_request'
+        with:
+          fetch-depth: 0
+      - name: Find the changed SDK code
+        id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" != pull_request ]; then
+            echo "sdk=true" >> "$GITHUB_OUTPUT"
+            echo "docs-samples=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed="$(git diff --name-only "$BASE...$HEAD")"
+          printf '%s\n' "$changed"
+          # The SDK, its tests and fixtures, the build configuration, this workflow and the scripts its compat jobs call.
+          sdk='^(src/|tests/AgentCat\.Tests/|tests/AgentCat\.Tests\.StdioServer/|tests/AgentCat\.Aot/|tests/AgentCat\.DocsSamples/|Directory\.Build\.props$|Directory\.Packages\.props$|global\.json$|nuget\.config$|AgentCat\.slnx$|AgentCat\.snk$|BannedSymbols\.txt$|\.editorconfig$|\.github/workflows/ci\.yml$|\.github/scripts/discover-mcp-versions\.py$|\.github/scripts/docs_samples\.py$)'
+          if grep -qE "$sdk" <<< "$changed"; then sdk=true; else sdk=false; fi
+          # docs-samples compiles the C# fences of README.md, so a README change runs it too.
+          if [ "$sdk" = true ] || grep -qx 'README\.md' <<< "$changed"; then docs=true; else docs=false; fi
+          echo "sdk=$sdk docs-samples=$docs"
+          echo "sdk=$sdk" >> "$GITHUB_OUTPUT"
+          echo "docs-samples=$docs" >> "$GITHUB_OUTPUT"
+
   test:
     name: test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -97,7 +134,8 @@ jobs:
 
   mcp-versions:
     name: mcp-versions (${{ matrix.mcp }})
-    needs: mcp-discover
+    needs: [changes, mcp-discover]
+    if: needs.changes.outputs.sdk == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -117,7 +155,8 @@ jobs:
   # matrix, and the README's RedactEvent sample equals the one in the XML docs (tests/AgentCat.DocsSamples).
   docs-samples:
     name: docs-samples (${{ matrix.mcp }})
-    needs: mcp-discover
+    needs: [changes, mcp-discover]
+    if: needs.changes.outputs.docs-samples == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -225,7 +264,8 @@ jobs:
   # warnings of the publish, then the events of a real run against a fake API.
   aot:
     name: aot (${{ matrix.app }}, ${{ matrix.tfm }}, ${{ matrix.mcp }})
-    needs: [pack, mcp-discover]
+    needs: [changes, pack, mcp-discover]
+    if: needs.changes.outputs.sdk == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
@@ -363,16 +403,23 @@ jobs:
   all-green:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [test, coverage, mcp-discover, mcp-versions, docs-samples, scripts, pack, aot, package-probe]
+    needs: [changes, test, coverage, mcp-discover, mcp-versions, docs-samples, scripts, pack, aot, package-probe]
     if: always()
     steps:
+      # A compat job that the changes job skipped counts as passed. Any other result but success fails.
       - name: Require every job to succeed
         env:
-          RESULTS: ${{ join(needs.*.result, ' ') }}
+          NEEDS: ${{ toJSON(needs) }}
+          SDK: ${{ needs.changes.outputs.sdk }}
+          DOCS_SAMPLES: ${{ needs.changes.outputs.docs-samples }}
         run: |
-          for r in $RESULTS; do
-            if [ "$r" != "success" ]; then
-              echo "A required job finished with result: $r"
-              exit 1
-            fi
-          done
+          set -euo pipefail
+          failed=0
+          while read -r job result; do
+            if [ "$result" = success ]; then continue; fi
+            if [ "$result" = skipped ] && [ "$SDK" = false ] && { [ "$job" = mcp-versions ] || [ "$job" = aot ]; }; then continue; fi
+            if [ "$result" = skipped ] && [ "$DOCS_SAMPLES" = false ] && [ "$job" = docs-samples ]; then continue; fi
+            echo "A required job finished with result: $job $result"
+            failed=1
+          done < <(jq -r 'to_entries[] | "\(.key) \(.value.result)"' <<< "$NEEDS")
+          exit "$failed"
