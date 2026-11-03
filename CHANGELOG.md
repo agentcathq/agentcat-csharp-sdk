@@ -7,9 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.0.0-beta.1] - 2026-10-30
-
-First release of the AgentCat SDK for C#, as a beta.
+First release of the AgentCat SDK for C#.
 
 ### Added
 
@@ -26,5 +24,4 @@ First release of the AgentCat SDK for C#, as a beta.
 - The `AGENTCAT_ENABLED` kill switch. AgentCat stays off in test runs, and `AgentCatSdk.Fake()` records events for your own tests.
 - Trim-safe and Native AOT compatible builds.
 
-[Unreleased]: https://github.com/agentcathq/agentcat-csharp-sdk/compare/v1.0.0-beta.1...HEAD
-[1.0.0-beta.1]: https://github.com/agentcathq/agentcat-csharp-sdk/releases/tag/v1.0.0-beta.1
+[Unreleased]: https://github.com/agentcathq/agentcat-csharp-sdk/commits/main
