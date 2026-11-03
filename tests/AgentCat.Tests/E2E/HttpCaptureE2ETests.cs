@@ -167,7 +167,9 @@ public class HttpCaptureE2ETests
     // Review Focus 4. With PerSessionExecutionContext, the handlers run on the session's execution context, which holds
     // the request that started the session: no requestInfo, empty hook headers, no exception and no line. That request
     // outlives its response while middleware after it or an OnCompleted callback runs, and IHttpContextAccessor still
-    // returns it until ASP.NET Core disposes it; here a middleware holds the initialize POST open during the call.
+    // returns it until ASP.NET Core disposes it; here a middleware holds the initialize POST open during the call. The
+    // client closes that response once it reads the initialize result, which can abort the POST before the transport
+    // returns, so the middleware holds it whether the rest of the pipeline returns or throws.
     [Theory]
     [MemberData(nameof(LaneData.StatefulHttpLanes), MemberType = typeof(LaneData))]
     public async Task Per_session_execution_context_gives_no_request_info(string lane)
@@ -181,11 +183,17 @@ public class HttpCaptureE2ETests
             Transport = PerSessionExecutionContext,
             App = app => app.Use(async (context, next) =>
             {
-                await next(context);
-                if (context.Request.Headers.ContainsKey(SentinelHeader) && !context.Request.Headers.ContainsKey(SessionIdHeader))
+                try
                 {
-                    held.TrySetResult();
-                    await release.Task;
+                    await next(context);
+                }
+                finally
+                {
+                    if (context.Request.Headers.ContainsKey(SentinelHeader) && !context.Request.Headers.ContainsKey(SessionIdHeader))
+                    {
+                        held.TrySetResult();
+                        await release.Task;
+                    }
                 }
             }),
         });
