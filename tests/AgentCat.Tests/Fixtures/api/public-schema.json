@@ -569,6 +569,99 @@
                     }
                 }
             }
+        },
+        "/v1/public/server-info/": {
+            "post": {
+                "operationId": "publishServerInfo",
+                "description": "Tell AgentCat what an MCP server offers to agents: its name, version, title, instructions and its lists of tools, resources, resource templates and prompts. Send it when the server starts and then once an hour. The body can hold 1,000,000 bytes at most. AgentCat counts each non-ASCII character as 6 bytes, and an emoji as 12 bytes. AgentCat keeps one row per server name per day and drops repeats. Returns immediately with 202 Accepted.",
+                "summary": "Publish MCP server info",
+                "tags": [
+                    "ServerInfo"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "project_id"
+                                ],
+                                "properties": {
+                                    "project_id": {
+                                        "type": "string",
+                                        "description": "ID of the project that the MCP server reports to."
+                                    },
+                                    "server_name": {
+                                        "type": "string",
+                                        "maxLength": 255,
+                                        "description": "Name of the MCP server. Send the same value as server_name on events."
+                                    },
+                                    "server_version": {
+                                        "type": "string",
+                                        "description": "Version of the MCP server, as on events."
+                                    },
+                                    "server_title": {
+                                        "type": "string",
+                                        "description": "Display title of the MCP server."
+                                    },
+                                    "instructions": {
+                                        "type": "string",
+                                        "description": "Instructions that the MCP server gives to agents. AgentCat keeps the first 100,000 characters."
+                                    },
+                                    "features": {
+                                        "type": "object",
+                                        "description": "What the MCP server offers to agents. Each key is a list type of the MCP specification (tools, resources, resourceTemplates, prompts) with the items as the server lists them. Send every item with its full description. AgentCat stores keys that it does not know."
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {}
+                ],
+                "responses": {
+                    "202": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ServerInfoAcceptedResponse"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "400": {
+                        "description": "Invalid request data"
+                    },
+                    "413": {
+                        "description": "The body is larger than 1,000,000 bytes"
+                    },
+                    "503": {
+                        "description": "Server overloaded"
+                    },
+                    "401": {
+                        "description": "Authentication credentials missing or invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Authenticated user lacks permission for this resource.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     },
     "components": {
@@ -598,6 +691,15 @@
                 ]
             },
             "EventAcceptedResponse": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "default": "accepted"
+                    }
+                }
+            },
+            "ServerInfoAcceptedResponse": {
                 "type": "object",
                 "properties": {
                     "status": {

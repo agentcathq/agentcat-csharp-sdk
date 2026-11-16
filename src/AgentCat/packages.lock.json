@@ -4,9 +4,9 @@
     ".NETStandard,Version=v2.0": {
       "AgentCat.Api": {
         "type": "Direct",
-        "requested": "[0.0.5, )",
-        "resolved": "0.0.5",
-        "contentHash": "JOT/Zt6LOcWWG1aM2miyVgODDx/FmOl/CSDu4ZNXPhnKq3fvsvm7tse7qHOnkXceoM47QLKbL2ftSpHlcBLZ/Q==",
+        "requested": "[0.0.6, )",
+        "resolved": "0.0.6",
+        "contentHash": "lhsyW4FSqcyBq2z9ikJN21K7OBpWHy/8udfOXNTu1uj1X4Mn4L74MMLuqNrA0XGe0pylx9rGzBOG2th83cVcmQ==",
         "dependencies": {
           "System.Text.Json": "10.0.3"
         }
@@ -283,9 +283,9 @@
     "net10.0": {
       "AgentCat.Api": {
         "type": "Direct",
-        "requested": "[0.0.5, )",
-        "resolved": "0.0.5",
-        "contentHash": "JOT/Zt6LOcWWG1aM2miyVgODDx/FmOl/CSDu4ZNXPhnKq3fvsvm7tse7qHOnkXceoM47QLKbL2ftSpHlcBLZ/Q=="
+        "requested": "[0.0.6, )",
+        "resolved": "0.0.6",
+        "contentHash": "lhsyW4FSqcyBq2z9ikJN21K7OBpWHy/8udfOXNTu1uj1X4Mn4L74MMLuqNrA0XGe0pylx9rGzBOG2th83cVcmQ=="
       },
       "Microsoft.CodeAnalysis.BannedApiAnalyzers": {
         "type": "Direct",
@@ -406,9 +406,9 @@
     "net8.0": {
       "AgentCat.Api": {
         "type": "Direct",
-        "requested": "[0.0.5, )",
-        "resolved": "0.0.5",
-        "contentHash": "JOT/Zt6LOcWWG1aM2miyVgODDx/FmOl/CSDu4ZNXPhnKq3fvsvm7tse7qHOnkXceoM47QLKbL2ftSpHlcBLZ/Q==",
+        "requested": "[0.0.6, )",
+        "resolved": "0.0.6",
+        "contentHash": "lhsyW4FSqcyBq2z9ikJN21K7OBpWHy/8udfOXNTu1uj1X4Mn4L74MMLuqNrA0XGe0pylx9rGzBOG2th83cVcmQ==",
         "dependencies": {
           "System.Text.Json": "10.0.3"
         }
