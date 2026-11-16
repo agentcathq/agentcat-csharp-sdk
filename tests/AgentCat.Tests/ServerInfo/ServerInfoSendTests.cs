@@ -1,5 +1,6 @@
 #pragma warning disable CA1861
 using System.Net;
+using System.Net.Http;
 using System.Text.Json.Nodes;
 using AgentCat.Internal;
 using AgentCat.Internal.Delivery;

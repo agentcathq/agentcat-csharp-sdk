@@ -304,7 +304,7 @@ public class ServerInfoHeartbeatTests
         Assert.Equal(2, lab.Heartbeat.Guard.Begun);
         var bodies = await lab.Api.WaitForAsync(2);
         await lab.IdleAsync();
-        Assert.Equal(new[] { "demo-server", "other-server" }, bodies.Select(b => (string)b["server_name"]!).Order().ToArray());
+        Assert.Equal(new[] { "demo-server", "other-server" }, bodies.Select(b => (string)b["server_name"]!).OrderBy(n => n, StringComparer.Ordinal).ToArray());
     }
 
     [Fact]
@@ -372,7 +372,7 @@ public class ServerInfoHeartbeatTests
             });
         var options = new AgentCatOptions
         {
-            RedactSensitiveInformation = (text, _) => new ValueTask<string>(text.Replace("secret", "[x]", StringComparison.Ordinal)),
+            RedactSensitiveInformation = (text, _) => new ValueTask<string>(text.Replace("secret", "[x]")),
         };
         var server = await lab.StartAsync(harness, options: options);
 
