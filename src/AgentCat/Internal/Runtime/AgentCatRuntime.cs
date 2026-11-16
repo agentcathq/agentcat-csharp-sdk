@@ -49,11 +49,11 @@ internal sealed class AgentCatRuntime
     {
     }
 
-    // Records each event after its last stage instead of sending it, and gives each server info heartbeat to
-    // serverInfoSender. Always on, with inert diagnostics. One reader keeps the recorded events in the order they were
-    // queued.
-    internal AgentCatRuntime(IAgentCatLog log, Action<AgentCatEvent> record, IServerInfoSender serverInfoSender)
-        : this(log, UnusedSender.Instance, new PipelineSettings { Concurrency = 1 }, null, null, null, followsCurrent: true, record, null, null, null, null, serverInfoSender)
+    // Records each event after its last stage instead of sending it. Always on, with inert diagnostics. One reader
+    // keeps the recorded events in the order they were queued. It has no server info sender: while a fake is current,
+    // no heartbeat starts and no list handler runs for one.
+    internal AgentCatRuntime(IAgentCatLog log, Action<AgentCatEvent> record)
+        : this(log, UnusedSender.Instance, new PipelineSettings { Concurrency = 1 }, null, null, null, followsCurrent: true, record, null, null, null, null, null)
     {
     }
 
@@ -85,10 +85,7 @@ internal sealed class AgentCatRuntime
         Pipeline = new EventPipeline(sender, log, settings, Clock, record: record, exports: Exports);
         ShutdownDeadline = shutdownDeadline ?? new ShutdownDeadline();
         ExporterBuilder = exporterBuilder;
-
-        // The lines of a recorded heartbeat are dropped: when it ends is not tied to the events, so a fake's log
-        // would differ from run to run.
-        ServerInfo = new ServerInfoHeartbeat(serverInfoSender, record is null ? log : NullAgentCatLog.Instance, Clock, Gate);
+        ServerInfo = new ServerInfoHeartbeat(serverInfoSender, log, Clock, Gate);
     }
 
     internal static AgentCatRuntime Shared => SharedInstance.Value;

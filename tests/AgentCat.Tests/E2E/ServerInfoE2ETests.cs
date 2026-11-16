@@ -96,4 +96,152 @@ public class ServerInfoE2ETests
             listed.Tools.Select(t => t.Name).ToArray(),
             body["features"]!["tools"]!.AsArray().Select(t => (string)t!["name"]!).ToArray());
     }
+
+    // A scoped service that fails when two calls use it at the same time, as an EF Core DbContext does.
+    private sealed class Fragile : IDisposable
+    {
+        private readonly FragileLog _log;
+        private int _users;
+        private int _disposed;
+
+        public Fragile(FragileLog log)
+        {
+            _log = log;
+            Owner = InRequest.Value ? "request" : "heartbeat";
+            lock (log.Created)
+            {
+                log.Created.Add(this);
+            }
+        }
+
+        internal bool Disposed => Volatile.Read(ref _disposed) != 0;
+
+        internal string Owner { get; }
+
+        internal async Task UseAsync()
+        {
+            try
+            {
+                if (Interlocked.Increment(ref _users) != 1 || Disposed)
+                {
+                    Interlocked.Increment(ref _log.Misuses);
+                    throw new InvalidOperationException("A second operation was started on this instance, or it is disposed.");
+                }
+
+                await Task.Delay(20);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _users);
+            }
+        }
+
+        public void Dispose() => Volatile.Write(ref _disposed, 1);
+    }
+
+    private sealed class FragileLog
+    {
+        internal int Misuses;
+
+        internal List<Fragile> Created { get; } = new();
+
+        internal Fragile[] Snapshot()
+        {
+            lock (Created)
+            {
+                return Created.ToArray();
+            }
+        }
+    }
+
+    private static readonly AsyncLocal<bool> InRequest = new();
+
+    private static string Describe(FragileLog log)
+        => string.Join(", ", log.Snapshot().Select(f => f.Owner + (f.Disposed ? " disposed" : " alive")));
+
+    [Theory]
+    [MemberData(nameof(LaneData.StatelessLanes), MemberType = typeof(LaneData))]
+    public async Task A_stateless_server_whose_handlers_use_a_scoped_service_keeps_its_results_and_sends_the_heartbeat(string lane)
+    {
+        if (!Lanes.Get(lane).HandlerTools)
+        {
+            return;
+        }
+
+        var heartbeats = new RecordingServerInfoSender();
+        var log = new FragileLog();
+        var heartbeatListCalls = 0;
+        var requestScopeWasDisposed = false;
+        await using var e2e = await Lanes.Get(lane).StartAsync(Scenarios.BaselineDefaults, new LaneSetup
+        {
+            ServerInfo = heartbeats,
+
+            // Kestrel ends a request, and its service scope, when the response is written. The in-memory TestServer
+            // can keep the scope until the client lets go of the response.
+            Kestrel = true,
+            App = app => app.Use(async (http, next) =>
+            {
+                InRequest.Value = true;
+                await next(http);
+            }),
+            Server = mcp =>
+            {
+                mcp.Services.AddSingleton(log);
+                mcp.Services.AddScoped<Fragile>();
+                mcp.Services.Configure<McpServerOptions>(o =>
+                {
+                    var list = o.Handlers.ListToolsHandler!;
+                    var call = o.Handlers.CallToolHandler!;
+                    o.Handlers.ListToolsHandler = async (context, token) =>
+                    {
+                        // The heartbeat runs without the execution context of a request. Its list call waits until
+                        // the scope of the request that started it is gone.
+                        if (!InRequest.Value)
+                        {
+                            Interlocked.Increment(ref heartbeatListCalls);
+                            var ofRequest = log.Snapshot();
+                            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(3);
+                            while (!ofRequest.All(f => f.Disposed) && DateTime.UtcNow < deadline)
+                            {
+                                await Task.Delay(10, token);
+                            }
+
+                            requestScopeWasDisposed = ofRequest.Length > 0 && ofRequest.All(f => f.Disposed);
+                        }
+
+                        await context.Services!.GetRequiredService<Fragile>().UseAsync();
+                        return await list(context, token);
+                    };
+                    o.Handlers.CallToolHandler = async (context, token) =>
+                    {
+                        await context.Services!.GetRequiredService<Fragile>().UseAsync();
+                        return await call(context, token);
+                    };
+                });
+            },
+        });
+
+        var listed = await e2e.ListToolsAsync();
+        var body = Assert.Single(await heartbeats.WaitForAsync(1));
+        for (var i = 0; i < 3; i++)
+        {
+            E2EAssert.Succeeded(await e2e.CallToolAsync("strict", """{"msg":"hello","context":"say hello","session_id":"start"}"""));
+        }
+
+        await e2e.AssertEventCountAsync(3);
+        Assert.Equal(0, Volatile.Read(ref log.Misuses));
+        Assert.Equal(1, Volatile.Read(ref heartbeatListCalls));
+        Assert.True(requestScopeWasDisposed, "The list call of the heartbeat did not see the request scope disposed. " + Describe(log));
+        Assert.Equal(1, heartbeats.Count);
+        Assert.Equal(
+            listed.Tools.Select(t => t.Name).ToArray(),
+            body["features"]!["tools"]!.AsArray().Select(t => (string)t!["name"]!).ToArray());
+
+        var deadline = DateTime.UtcNow + LaneInstance.EventBound;
+        while (!log.Snapshot().All(f => f.Disposed))
+        {
+            Assert.True(DateTime.UtcNow < deadline, "A scope was not disposed. " + Describe(log));
+            await Task.Delay(20, TestContext.Current.CancellationToken);
+        }
+    }
 }

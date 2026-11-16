@@ -1,4 +1,3 @@
-using System.Text.Json.Nodes;
 using AgentCat.Internal.Delivery;
 using AgentCat.Internal.Runtime;
 using AgentCat.Tests.TestSupport;
@@ -61,29 +60,52 @@ public class ServerInfoTestSetupTests
     }
 
     [Fact]
-    public async Task The_fake_records_a_heartbeat_apart_from_the_events_and_writes_no_line_for_it()
+    public async Task Under_the_public_fake_no_heartbeat_starts_and_no_list_handler_runs_for_one()
     {
         var sharedBefore = TestAssemblySetup.SharedServerInfo.Count;
+        var sharedBegunBefore = AgentCatRuntime.Shared.ServerInfo.Guard.Begun;
+        var toolLists = 0;
+        var resourceLists = 0;
+        var promptLists = 0;
         using var fake = AgentCatSdk.Fake();
         await using var server = HeartbeatLab.DemoServer();
-        server.Configure(o => AgentCatSdk.Track(o, Project));
+        server.Configure(o =>
+        {
+            var tools = o.Handlers.ListToolsHandler!;
+            o.Handlers.ListToolsHandler = (context, token) =>
+            {
+                Interlocked.Increment(ref toolLists);
+                return tools(context, token);
+            };
+            var resources = o.Handlers.ListResourcesHandler!;
+            o.Handlers.ListResourcesHandler = (context, token) =>
+            {
+                Interlocked.Increment(ref resourceLists);
+                return resources(context, token);
+            };
+            HeartbeatLab.SetPrompts(o, (_, _) =>
+            {
+                Interlocked.Increment(ref promptLists);
+                return new ValueTask<ModelContextProtocol.Protocol.ListPromptsResult>(new ModelContextProtocol.Protocol.ListPromptsResult());
+            });
+            AgentCatSdk.Track(o, Project);
+        });
         await server.StartAsync();
+        fake.Runtime.ServerInfo.Guard.StartMemory(DateTimeOffset.UtcNow.AddHours(-1));
 
         await server.ListToolsAsync();
+        await server.CallToolAsync("alpha");
+        await server.CallToolAsync("get_more_tools", "{\"context\":\"I need a tool\"}");
+        await fake.AssertTrackedCountAsync(2, TestContext.Current.CancellationToken);
+        await Task.Delay(200, TestContext.Current.CancellationToken);
 
-        var deadline = DateTime.UtcNow + FakeAgentCatApi.WaitBound;
-        while (fake.ServerInfoBodies.Count == 0)
-        {
-            Assert.True(DateTime.UtcNow < deadline, "The fake recorded no heartbeat.");
-            await Task.Delay(10, TestContext.Current.CancellationToken);
-        }
-
-        var body = JsonNode.Parse(Assert.Single(fake.ServerInfoBodies))!;
-        Assert.Equal(Project, (string)body["project_id"]!);
-        Assert.Equal("demo-server", (string)body["server_name"]!);
-        Assert.Equal(4, body["features"]!["tools"]!.AsArray().Count);
-        await fake.AssertNothingTrackedAsync(TestContext.Current.CancellationToken);
-        Assert.DoesNotContain(await fake.GetLogsAsync(TestContext.Current.CancellationToken), line => line.Contains("heartbeat", StringComparison.Ordinal));
+        Assert.Null(fake.Runtime.ServerInfo.Sender);
+        Assert.Equal(0, fake.Runtime.ServerInfo.Guard.Begun);
+        Assert.Equal(sharedBegunBefore, AgentCatRuntime.Shared.ServerInfo.Guard.Begun);
         Assert.Equal(sharedBefore, TestAssemblySetup.SharedServerInfo.Count);
+        Assert.Equal(1, Volatile.Read(ref toolLists));
+        Assert.Equal(0, Volatile.Read(ref resourceLists));
+        Assert.Equal(0, Volatile.Read(ref promptLists));
+        Assert.DoesNotContain(await fake.GetLogsAsync(TestContext.Current.CancellationToken), line => line.Contains("heartbeat", StringComparison.Ordinal));
     }
 }

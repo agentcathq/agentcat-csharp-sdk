@@ -16,7 +16,7 @@ internal static class Bounded
     {
         if (limit <= TimeSpan.Zero)
         {
-            throw new TimeoutException(timeoutMessage);
+            throw new HeartbeatFailure(timeoutMessage);
         }
 
         var abandon = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -37,7 +37,7 @@ internal static class Bounded
                 {
                     handedOff = true;
                     _ = AbandonAsync(work, abandon);
-                    throw new TimeoutException(timeoutMessage);
+                    throw new HeartbeatFailure(timeoutMessage);
                 }
             }
 

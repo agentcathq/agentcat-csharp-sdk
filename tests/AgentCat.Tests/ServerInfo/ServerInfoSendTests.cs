@@ -115,7 +115,7 @@ public class ServerInfoSendTests
 
         Assert.Single(ServerInfoPosts(handler));
         Assert.Equal(
-            "Server info heartbeat not sent: HttpRequestException: connection refused",
+            "Server info heartbeat not sent: the send failed: HttpRequestException",
             Assert.Single(lab.HeartbeatLines()));
     }
 

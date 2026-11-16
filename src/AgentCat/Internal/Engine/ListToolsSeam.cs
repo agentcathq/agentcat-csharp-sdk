@@ -26,8 +26,16 @@ internal sealed class ListToolsSeam
         RequestContext<ListToolsRequestParams> context,
         CancellationToken cancellationToken)
     {
-        ServerInfoHeartbeat.OnRequest(tracker, context, needsSettledMemory: false);
-        var original = await next(context, cancellationToken).ConfigureAwait(false);
+        ListToolsResult original;
+        try
+        {
+            original = await next(context, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            ServerInfoHeartbeat.OnRequest(tracker, context, needsSettledMemory: false);
+        }
+
         var log = tracker.Runtime.CallLog;
         try
         {

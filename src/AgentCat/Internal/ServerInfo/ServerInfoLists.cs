@@ -43,9 +43,11 @@ internal static class ServerInfoLists
     private static readonly JsonTypeInfo ListPromptsParamsInfo = McpJsonUtilities.DefaultOptions.GetTypeInfo(typeof(ListPromptsRequestParams));
 
     // The features of the server. A server without a source for a list has no key for it. A failed tool list throws;
-    // any other failed list is left out and reported through skipped.
+    // any other failed list is left out and reported through skipped. The list handlers get services, which are
+    // never those of the request that started the heartbeat.
     internal static async Task<JsonObject> ReadAsync(
         HeartbeatOrigin origin,
+        IServiceProvider? services,
         InjectionSettings injection,
         TimeSpan listTimeout,
         Action<string, Exception> skipped,
@@ -58,18 +60,26 @@ internal static class ServerInfoLists
         var tools = options.ToolCollection;
         if (handlers.ListToolsHandler is not null || tools is { Count: > 0 })
         {
-            features[ToolsKey] = await ListAsync(
-                origin,
-                RequestMethods.ToolsList,
-                handlers.ListToolsHandler,
-                ListToolsParamsInfo,
-                static result => result.Tools,
-                tools is null ? null : ProtocolTools(tools),
-                ToolInfo,
-                NameKey,
-                page => Inject(injection, page),
-                listTimeout,
-                cancellationToken).ConfigureAwait(false);
+            try
+            {
+                features[ToolsKey] = await ListAsync(
+                    origin,
+                    services,
+                    RequestMethods.ToolsList,
+                    handlers.ListToolsHandler,
+                    ListToolsParamsInfo,
+                    static result => result.Tools,
+                    tools is null ? null : ProtocolTools(tools),
+                    ToolInfo,
+                    NameKey,
+                    page => Inject(injection, page),
+                    listTimeout,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+            {
+                throw new HeartbeatFailure("the " + ToolsKey + " list failed: " + HeartbeatFailure.ReasonOf(ex));
+            }
         }
 
         var resources = options.ResourceCollection;
@@ -79,6 +89,7 @@ internal static class ServerInfoLists
             {
                 features[ResourcesKey] = await ListAsync(
                     origin,
+                    services,
                     RequestMethods.ResourcesList,
                     handlers.ListResourcesHandler,
                     ListResourcesParamsInfo,
@@ -99,6 +110,7 @@ internal static class ServerInfoLists
             {
                 features[ResourceTemplatesKey] = await ListAsync(
                     origin,
+                    services,
                     RequestMethods.ResourcesTemplatesList,
                     handlers.ListResourceTemplatesHandler,
                     ListResourceTemplatesParamsInfo,
@@ -123,6 +135,7 @@ internal static class ServerInfoLists
             {
                 features[PromptsKey] = await ListAsync(
                     origin,
+                    services,
                     RequestMethods.PromptsList,
                     handlers.ListPromptsHandler,
                     ListPromptsParamsInfo,
@@ -185,6 +198,7 @@ internal static class ServerInfoLists
     // covers all pages of the list.
     private static async Task<JsonArray> ListAsync<TParams, TResult, TItem>(
         HeartbeatOrigin origin,
+        IServiceProvider? services,
         string method,
         McpRequestHandler<TParams, TResult>? handler,
         JsonTypeInfo paramsInfo,
@@ -209,7 +223,7 @@ internal static class ServerInfoLists
             string? next = null;
             if (handler is not null)
             {
-                var context = Context<TParams>(origin, method, paramsInfo, cursor);
+                var context = Context<TParams>(origin, services, method, paramsInfo, cursor);
                 var result = await Bounded.RunAsync(
                     token => handler(context, token).AsTask(),
                     timeout - elapsed.Elapsed,
@@ -217,7 +231,7 @@ internal static class ServerInfoLists
                     cancellationToken).ConfigureAwait(false);
                 if (result is null || itemsOf(result) is not { } items)
                 {
-                    throw new InvalidOperationException(method + " returned no list");
+                    throw new HeartbeatFailure(method + " returned no list");
                 }
 
                 foreach (var item in items)
@@ -251,12 +265,12 @@ internal static class ServerInfoLists
 
             if (!cursors.Add(next))
             {
-                throw new InvalidOperationException(method + " returned the same cursor again");
+                throw new HeartbeatFailure(method + " returned the same cursor again");
             }
 
             if (pages >= MaxPages)
             {
-                throw new InvalidOperationException(
+                throw new HeartbeatFailure(
                     method + " has more than " + MaxPages.ToString(CultureInfo.InvariantCulture) + " pages");
             }
 
@@ -266,6 +280,7 @@ internal static class ServerInfoLists
 
     private static RequestContext<TParams> Context<TParams>(
         HeartbeatOrigin origin,
+        IServiceProvider? services,
         string method,
         JsonTypeInfo paramsInfo,
         string? cursor)
@@ -280,7 +295,7 @@ internal static class ServerInfoLists
         return new RequestContext<TParams>(origin.Server, request)
         {
             Params = (TParams)JsonSerializer.Deserialize(json.ToJsonString(), paramsInfo)!,
-            Services = origin.Services,
+            Services = services,
         };
     }
 

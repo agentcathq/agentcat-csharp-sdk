@@ -53,6 +53,10 @@ internal sealed class HeartbeatLab : IAsyncDisposable
 
     internal static ValueTask<CallToolResult> Ok() => new(Mcp.Result(OkResult));
 
+    // The text of the tool itself: AgentCat can put its session text in front of it.
+    internal static string TextOf(CallToolResult result)
+        => (string)Wire(result)["content"]!.AsArray().Last()!["text"]!;
+
     internal static string ToolJson(string name, string? description = null)
         => "{\"name\":" + JsonSerializer.Serialize(name)
             + (description is null ? "" : ",\"description\":" + JsonSerializer.Serialize(description))
@@ -115,12 +119,38 @@ internal sealed class HeartbeatLab : IAsyncDisposable
     }
 
     // Tracks the server on the runtime of the lab, after every other configure step, and starts it.
-    internal async Task<McpHarness> StartAsync(McpHarness server, string? project = Project, AgentCatOptions? options = null)
+    internal async Task<McpHarness> StartAsync(
+        McpHarness server,
+        string? project = Project,
+        AgentCatOptions? options = null,
+        bool withServices = false)
     {
         _servers.Add(server);
         server.Configure(o => Assert.NotNull(AgentCatEngine.Install(o, project, options, Runtime, "options")));
-        await server.StartAsync();
+        await server.StartAsync(null, withServices);
         return server;
+    }
+
+    // After a first tool list request a tool call needs no list of its own, so only the heartbeat reads the lists.
+    internal async Task FirstHeartbeatAsync(McpHarness server)
+    {
+        await server.ListToolsAsync();
+        await SingleBodyAsync();
+        Advance(3600);
+    }
+
+    internal async Task WaitForLineAsync(string line)
+    {
+        var deadline = DateTime.UtcNow + FakeAgentCatApi.WaitBound;
+        while (!Log.Lines.Contains(line))
+        {
+            if (DateTime.UtcNow > deadline)
+            {
+                throw new TimeoutException("No log line \"" + line + "\". Log: " + string.Join(" / ", Log.Lines));
+            }
+
+            await Task.Delay(10, TestContext.Current.CancellationToken);
+        }
     }
 
     internal async Task<JsonObject> SingleBodyAsync()

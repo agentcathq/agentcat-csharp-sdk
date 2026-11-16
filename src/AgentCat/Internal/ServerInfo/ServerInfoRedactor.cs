@@ -77,7 +77,16 @@ internal static class ServerInfoRedactor
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return await redact(value, cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException("the redaction function returned no string");
+        string? redacted;
+        try
+        {
+            redacted = await redact(value, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new HeartbeatFailure("the redaction function failed: " + HeartbeatFailure.ReasonOf(ex));
+        }
+
+        return redacted ?? throw new HeartbeatFailure("the redaction function returned no string");
     }
 }

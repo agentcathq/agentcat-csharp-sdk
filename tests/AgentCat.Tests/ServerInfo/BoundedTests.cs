@@ -43,7 +43,7 @@ public class BoundedTests
         var never = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
         var token = CancellationToken.None;
 
-        var error = await Assert.ThrowsAsync<TimeoutException>(() => Bounded.RunAsync(
+        var error = await Assert.ThrowsAsync<HeartbeatFailure>(() => Bounded.RunAsync(
             given =>
             {
                 token = given;
@@ -65,7 +65,7 @@ public class BoundedTests
     {
         var started = false;
 
-        await Assert.ThrowsAsync<TimeoutException>(() => Bounded.RunAsync(
+        await Assert.ThrowsAsync<HeartbeatFailure>(() => Bounded.RunAsync(
             _ =>
             {
                 started = true;

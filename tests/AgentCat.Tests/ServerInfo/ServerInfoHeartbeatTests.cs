@@ -3,6 +3,8 @@ using System.Diagnostics;
 using System.Text.Json.Nodes;
 using AgentCat.Internal.Runtime;
 using AgentCat.Tests.TestSupport;
+using Microsoft.Extensions.DependencyInjection;
+using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -15,9 +17,26 @@ public class ServerInfoHeartbeatTests
     private static string[] Names(JsonNode? list, string key = "name")
         => list!.AsArray().Select(item => (string)item![key]!).ToArray();
 
-    // The text of the tool itself: AgentCat can put its session text in front of it.
-    private static string TextOf(CallToolResult result)
-        => (string)HeartbeatLab.Wire(result)["content"]!.AsArray().Last()!["text"]!;
+    private static string TextOf(CallToolResult result) => HeartbeatLab.TextOf(result);
+
+    private static async Task UntilAsync(Func<bool> condition, string what)
+    {
+        var deadline = DateTime.UtcNow + FakeAgentCatApi.WaitBound;
+        while (!condition())
+        {
+            Assert.True(DateTime.UtcNow < deadline, what);
+            await Task.Delay(10, TestContext.Current.CancellationToken);
+        }
+    }
+
+    private sealed class ScopeProbe : IDisposable
+    {
+        private int _disposed;
+
+        internal bool Disposed => Volatile.Read(ref _disposed) != 0;
+
+        public void Dispose() => Volatile.Write(ref _disposed, 1);
+    }
 
     [Fact]
     public async Task V1_one_tool_call_sends_the_six_keys_and_every_list()
@@ -154,7 +173,7 @@ public class ServerInfoHeartbeatTests
         var features = (await lab.SingleBodyAsync())["features"]!.AsObject();
         Assert.Equal(new[] { "tools", "resources", "resourceTemplates" }, features.Select(p => p.Key).ToArray());
         Assert.Equal(new[] { "alpha", "beta", "gamma", "get_more_tools" }, Names(features["tools"]));
-        Assert.Contains("Server info heartbeat leaves out the prompts list: InvalidOperationException: " + Boom, lab.Log.Lines);
+        Assert.Contains("Server info heartbeat leaves out the prompts list: InvalidOperationException", lab.Log.Lines);
     }
 
     [Fact]
@@ -172,18 +191,10 @@ public class ServerInfoHeartbeatTests
 
         var features = (await lab.SingleBodyAsync())["features"]!.AsObject();
         Assert.Equal(new[] { "tools", "prompts" }, features.Select(p => p.Key).ToArray());
-        Assert.Contains("Server info heartbeat leaves out the resources list: InvalidOperationException: " + Boom, lab.Log.Lines);
+        Assert.Contains("Server info heartbeat leaves out the resources list: InvalidOperationException", lab.Log.Lines);
         Assert.Contains(
-            "Server info heartbeat leaves out the resourceTemplates list: InvalidOperationException: resources/templates/list returned no list",
+            "Server info heartbeat leaves out the resourceTemplates list: resources/templates/list returned no list",
             lab.Log.Lines);
-    }
-
-    // After a first tool list request the call needs no list of its own, so only the heartbeat reads the list.
-    private static async Task FirstHeartbeatAsync(HeartbeatLab lab, McpHarness server)
-    {
-        await server.ListToolsAsync();
-        await lab.SingleBodyAsync();
-        lab.Advance(3600);
     }
 
     [Fact]
@@ -198,7 +209,7 @@ public class ServerInfoHeartbeatTests
                 => Volatile.Read(ref failing) ? throw new InvalidOperationException(Boom) : list(context, token);
         });
         var server = await lab.StartAsync(harness);
-        await FirstHeartbeatAsync(lab, server);
+        await lab.FirstHeartbeatAsync(server);
 
         Volatile.Write(ref failing, true);
         var result = await server.CallToolAsync("alpha");
@@ -207,7 +218,7 @@ public class ServerInfoHeartbeatTests
         Assert.Equal("ok", TextOf(result));
         Assert.Equal(2, lab.Heartbeat.Guard.Begun);
         Assert.Equal(1, lab.Api.Count);
-        Assert.Equal("Server info heartbeat not sent: InvalidOperationException: " + Boom, lab.HeartbeatLines().Last());
+        Assert.Equal("Server info heartbeat not sent: the tools list failed: InvalidOperationException", lab.HeartbeatLines().Last());
     }
 
     [Fact]
@@ -230,7 +241,7 @@ public class ServerInfoHeartbeatTests
         Assert.False(features.ContainsKey("prompts"));
         Assert.Equal(4, features["tools"]!.AsArray().Count);
         Assert.InRange(promptCalls, 1, 100);
-        Assert.Contains("Server info heartbeat leaves out the prompts list: InvalidOperationException: prompts/list returned the same cursor again", lab.Log.Lines);
+        Assert.Contains("Server info heartbeat leaves out the prompts list: prompts/list returned the same cursor again", lab.Log.Lines);
     }
 
     [Fact]
@@ -250,7 +261,7 @@ public class ServerInfoHeartbeatTests
         var features = (await lab.SingleBodyAsync())["features"]!.AsObject();
         Assert.False(features.ContainsKey("prompts"));
         Assert.Equal(100, promptCalls);
-        Assert.Contains("Server info heartbeat leaves out the prompts list: InvalidOperationException: prompts/list has more than 100 pages", lab.Log.Lines);
+        Assert.Contains("Server info heartbeat leaves out the prompts list: prompts/list has more than 100 pages", lab.Log.Lines);
     }
 
     [Fact]
@@ -341,157 +352,6 @@ public class ServerInfoHeartbeatTests
     }
 
     [Fact]
-    public async Task V10_an_api_that_never_answers_does_not_hold_the_tool_call()
-    {
-        await using var lab = new HeartbeatLab();
-        lab.Api.Respond(RecordingServerInfoSender.Hang);
-        var server = await lab.StartAsync(HeartbeatLab.DemoServer());
-
-        var result = await server.CallToolAsync("alpha");
-        await lab.Api.WaitForAsync(1);
-        var next = await server.CallToolAsync("gamma");
-
-        Assert.Equal("ok", TextOf(result));
-        Assert.Equal("ok", TextOf(next));
-        Assert.Empty(lab.HeartbeatLines());
-
-        lab.Heartbeat.SendTimeout = TimeSpan.FromMilliseconds(50);
-        lab.Advance(3600);
-        lab.Api.Respond(RecordingServerInfoSender.Hang);
-        await server.CallToolAsync("alpha");
-        await lab.Api.WaitForAsync(2);
-        await WaitForLineAsync(lab, "Server info heartbeat not sent: TimeoutException: the API did not answer within 50 ms");
-        Assert.Equal(2, lab.Api.Count);
-    }
-
-    [Fact]
-    public async Task V10_a_list_handler_that_never_returns_does_not_hold_the_tool_call()
-    {
-        await using var lab = new HeartbeatLab();
-        var entered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var never = new TaskCompletionSource<ListPromptsResult>();
-        var harness = HeartbeatLab.DemoServer().Configure(o => HeartbeatLab.SetPrompts(o, (_, _) =>
-        {
-            entered.TrySetResult(true);
-            return new ValueTask<ListPromptsResult>(never.Task);
-        }));
-        lab.Heartbeat.ListTimeout = TimeSpan.FromMilliseconds(200);
-        var server = await lab.StartAsync(harness);
-
-        var result = await server.CallToolAsync("alpha");
-
-        Assert.Equal("ok", TextOf(result));
-        await FakeAgentCatApi.WithinAsync(entered.Task, FakeAgentCatApi.WaitBound);
-        var features = (await lab.SingleBodyAsync())["features"]!.AsObject();
-        Assert.False(features.ContainsKey("prompts"));
-        Assert.Equal(4, features["tools"]!.AsArray().Count);
-        Assert.Contains("Server info heartbeat leaves out the prompts list: TimeoutException: prompts/list did not finish within 200 ms", lab.Log.Lines);
-    }
-
-    [Fact]
-    public async Task V10_the_tool_call_returns_while_the_tool_list_of_the_heartbeat_is_still_running()
-    {
-        await using var lab = new HeartbeatLab();
-        var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var entered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var holding = false;
-        var harness = HeartbeatLab.DemoServer().Configure(o =>
-        {
-            var list = o.Handlers.ListToolsHandler!;
-            o.Handlers.ListToolsHandler = async (context, token) =>
-            {
-                if (Volatile.Read(ref holding))
-                {
-                    entered.TrySetResult(true);
-                    await release.Task;
-                }
-
-                return await list(context, token);
-            };
-        });
-        var server = await lab.StartAsync(harness);
-        await FirstHeartbeatAsync(lab, server);
-
-        Volatile.Write(ref holding, true);
-        var result = await server.CallToolAsync("alpha");
-
-        Assert.Equal("ok", TextOf(result));
-        await FakeAgentCatApi.WithinAsync(entered.Task, FakeAgentCatApi.WaitBound);
-        Assert.Equal(2, lab.Heartbeat.Guard.Begun);
-        Assert.Equal(1, lab.Api.Count);
-        release.SetResult(true);
-        Assert.Equal(2, (await lab.Api.WaitForAsync(2)).Count);
-        await lab.IdleAsync();
-    }
-
-    [Fact]
-    public async Task V10_a_500_ends_the_attempt_without_a_second_post_and_no_error_escapes()
-    {
-        var unobserved = new List<Exception>();
-        void OnUnobserved(object? sender, UnobservedTaskExceptionEventArgs e)
-        {
-            if (e.Exception.ToString().Contains(Boom, StringComparison.Ordinal))
-            {
-                lock (unobserved)
-                {
-                    unobserved.Add(e.Exception);
-                }
-            }
-        }
-
-        TaskScheduler.UnobservedTaskException += OnUnobserved;
-        try
-        {
-            await using var lab = new HeartbeatLab();
-            lab.Api.Respond(500);
-            var harness = HeartbeatLab.DemoServer().Configure(o =>
-            {
-                HeartbeatLab.SetPrompts(o, (_, _) => new ValueTask<ListPromptsResult>(Task.FromException<ListPromptsResult>(new InvalidOperationException(Boom))));
-                o.Handlers.ListResourcesHandler = (_, _) => throw new InvalidOperationException(Boom);
-            });
-            var server = await lab.StartAsync(harness);
-
-            var result = await server.CallToolAsync("alpha");
-            await lab.IdleAsync();
-            var next = await server.CallToolAsync("gamma");
-            await server.ListToolsAsync();
-
-            Assert.Equal("ok", TextOf(result));
-            Assert.Equal("ok", TextOf(next));
-            Assert.Equal(1, lab.Api.Count);
-            Assert.Equal(1, lab.Heartbeat.Guard.Begun);
-            Assert.Contains("Server info heartbeat not sent: HTTP 500", lab.Log.Lines);
-        }
-        finally
-        {
-            GC.Collect();
-            GC.WaitForPendingFinalizers();
-            TaskScheduler.UnobservedTaskException -= OnUnobserved;
-        }
-
-        Assert.Empty(unobserved);
-    }
-
-    [Fact]
-    public async Task V10_the_whole_build_has_a_time_limit()
-    {
-        await using var lab = new HeartbeatLab();
-        var never = new TaskCompletionSource<string>();
-        lab.Heartbeat.BuildTimeout = TimeSpan.FromMilliseconds(100);
-        var options = new AgentCatOptions { RedactSensitiveInformation = (_, _) => new ValueTask<string>(never.Task) };
-        var server = await lab.StartAsync(HeartbeatLab.DemoServer(), options: options);
-
-        var result = await server.ListToolsAsync();
-        await lab.IdleAsync();
-
-        Assert.Equal(4, result.Tools.Count);
-        Assert.Equal(0, lab.Api.Count);
-        Assert.Equal(
-            "Server info heartbeat not sent: TimeoutException: the lists and the redaction did not finish within 100 ms",
-            Assert.Single(lab.HeartbeatLines()));
-    }
-
-    [Fact]
     public async Task V11_the_redaction_function_runs_on_the_text_and_not_on_names_and_uris()
     {
         await using var lab = new HeartbeatLab();
@@ -559,7 +419,7 @@ public class ServerInfoHeartbeatTests
 
         Assert.Equal(4, result.Tools.Count);
         Assert.Equal(0, lab.Api.Count);
-        Assert.Equal("Server info heartbeat not sent: InvalidOperationException: " + Boom, Assert.Single(lab.HeartbeatLines()));
+        Assert.Equal("Server info heartbeat not sent: the redaction function failed: InvalidOperationException", Assert.Single(lab.HeartbeatLines()));
     }
 
     [Fact]
@@ -574,7 +434,7 @@ public class ServerInfoHeartbeatTests
 
         Assert.Equal(0, lab.Api.Count);
         Assert.Equal(
-            "Server info heartbeat not sent: InvalidOperationException: the redaction function returned no string",
+            "Server info heartbeat not sent: the redaction function returned no string",
             Assert.Single(lab.HeartbeatLines()));
     }
 
@@ -738,17 +598,221 @@ public class ServerInfoHeartbeatTests
         Assert.Equal("prompts/list", seenMethod);
     }
 
-    private static async Task WaitForLineAsync(HeartbeatLab lab, string line)
+    [Fact]
+    public async Task No_list_handler_of_the_heartbeat_starts_before_the_tool_call_has_ended()
     {
-        var deadline = DateTime.UtcNow + FakeAgentCatApi.WaitBound;
-        while (!lab.Log.Lines.Contains(line))
-        {
-            if (DateTime.UtcNow > deadline)
+        await using var lab = new HeartbeatLab();
+        var inTool = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finish = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var listCalls = 0;
+        var harness = HeartbeatLab.DemoServer()
+            .AddHandlerTool(HeartbeatLab.ToolJson("slow"), async (_, _) =>
             {
-                throw new TimeoutException("No log line \"" + line + "\". Log: " + string.Join(" / ", lab.Log.Lines));
-            }
+                inTool.TrySetResult(true);
+                await finish.Task;
+                return await HeartbeatLab.Ok();
+            })
+            .Configure(o =>
+            {
+                var list = o.Handlers.ListToolsHandler!;
+                o.Handlers.ListToolsHandler = (context, token) =>
+                {
+                    Interlocked.Increment(ref listCalls);
+                    return list(context, token);
+                };
+                HeartbeatLab.SetPrompts(o, (_, _) =>
+                {
+                    Interlocked.Increment(ref listCalls);
+                    return new ValueTask<ListPromptsResult>(HeartbeatLab.Json<ListPromptsResult>("{\"prompts\":[]}"));
+                });
+            });
+        var server = await lab.StartAsync(harness);
+        await lab.FirstHeartbeatAsync(server);
+        var before = Volatile.Read(ref listCalls);
 
-            await Task.Delay(10, TestContext.Current.CancellationToken);
-        }
+        var call = server.CallToolAsync("slow");
+        await FakeAgentCatApi.WithinAsync(inTool.Task, FakeAgentCatApi.WaitBound);
+
+        Assert.Equal(1, lab.Heartbeat.Guard.Begun);
+        Assert.Equal(before, Volatile.Read(ref listCalls));
+        finish.SetResult(true);
+        Assert.Equal("ok", TextOf(await call));
+        Assert.Equal(2, lab.Heartbeat.Guard.Begun);
+        Assert.Equal(2, (await lab.Api.WaitForAsync(2)).Count);
+        await lab.IdleAsync();
+        Assert.Equal(before + 2, Volatile.Read(ref listCalls));
+    }
+
+    [Fact]
+    public async Task A_tool_call_that_fails_still_starts_the_heartbeat_after_it_and_keeps_its_error()
+    {
+        await using var lab = new HeartbeatLab();
+        var harness = HeartbeatLab.DemoServer()
+            .AddHandlerTool(HeartbeatLab.ToolJson("broken"), (_, _) => throw new McpProtocolException("broken tool", McpErrorCode.InvalidParams));
+        var server = await lab.StartAsync(harness);
+
+        var error = await Assert.ThrowsAsync<McpProtocolException>(() => server.CallToolAsync("broken"));
+
+        Assert.Contains("broken tool", error.Message, StringComparison.Ordinal);
+        Assert.Equal(1, lab.Heartbeat.Guard.Begun);
+        await lab.SingleBodyAsync();
+    }
+
+    [Theory]
+    [InlineData("success")]
+    [InlineData("failed list")]
+    [InlineData("time limit")]
+    public async Task The_list_handlers_get_a_scope_of_the_heartbeat_which_ends_after_the_lists(string outcome)
+    {
+        await using var lab = new HeartbeatLab();
+        var never = new TaskCompletionSource<ListPromptsResult>();
+        IServiceProvider? ofRequest = null;
+        IServiceProvider? ofHeartbeat = null;
+        ScopeProbe? probeOfRequest = null;
+        ScopeProbe? probe = null;
+        var harness = HeartbeatLab.DemoServer()
+            .ConfigureServices(s => s.AddScoped<ScopeProbe>())
+            .Configure(o =>
+            {
+                var list = o.Handlers.ListToolsHandler!;
+                o.Handlers.ListToolsHandler = (context, token) =>
+                {
+                    if (Interlocked.CompareExchange(ref ofRequest, context.Services, null) is null)
+                    {
+                        probeOfRequest = context.Services!.GetRequiredService<ScopeProbe>();
+                    }
+
+                    return list(context, token);
+                };
+                if (outcome == "failed list")
+                {
+                    o.Handlers.ListResourcesHandler = (_, _) => throw new InvalidOperationException(Boom);
+                }
+
+                HeartbeatLab.SetPrompts(o, (context, _) =>
+                {
+                    ofHeartbeat = context.Services;
+                    probe = context.Services!.GetRequiredService<ScopeProbe>();
+                    Assert.False(probe.Disposed);
+                    return outcome == "time limit"
+                        ? new ValueTask<ListPromptsResult>(never.Task)
+                        : new ValueTask<ListPromptsResult>(HeartbeatLab.Json<ListPromptsResult>("{\"prompts\":[{\"name\":\"scoped\"}]}"));
+                });
+            });
+        lab.Heartbeat.ListTimeout = outcome == "time limit" ? TimeSpan.FromMilliseconds(100) : lab.Heartbeat.ListTimeout;
+        var server = await lab.StartAsync(harness, withServices: true);
+
+        await server.ListToolsAsync();
+
+        var features = (await lab.SingleBodyAsync())["features"]!.AsObject();
+        Assert.Equal(outcome != "time limit", features.ContainsKey("prompts"));
+        Assert.Equal(outcome != "failed list", features.ContainsKey("resources"));
+        Assert.Equal(4, features["tools"]!.AsArray().Count);
+        Assert.NotNull(ofRequest);
+        Assert.NotNull(ofHeartbeat);
+        Assert.NotSame(ofRequest, ofHeartbeat);
+        Assert.NotSame(server.Services, ofHeartbeat);
+        await UntilAsync(() => probe!.Disposed, "The scope of the heartbeat was not disposed.");
+        Assert.NotNull(probeOfRequest);
+        Assert.NotSame(probeOfRequest, probe);
+    }
+
+    [Fact]
+    public async Task A_server_without_dependency_injection_gives_the_list_handlers_no_services()
+    {
+        await using var lab = new HeartbeatLab();
+        var called = false;
+        IServiceProvider? seen = null;
+        var harness = HeartbeatLab.DemoServer().Configure(o => HeartbeatLab.SetPrompts(o, (context, _) =>
+        {
+            seen = context.Services;
+            called = true;
+            return new ValueTask<ListPromptsResult>(HeartbeatLab.Json<ListPromptsResult>("{\"prompts\":[]}"));
+        }));
+        var server = await lab.StartAsync(harness);
+
+        await server.CallToolAsync("alpha");
+
+        await lab.SingleBodyAsync();
+        Assert.True(called);
+        Assert.Null(seen);
+    }
+
+    [Fact]
+    public async Task No_log_line_of_the_heartbeat_holds_the_message_of_a_customer_error()
+    {
+        await using var lab = new HeartbeatLab();
+        var failing = false;
+        var harness = HeartbeatLab.DemoServer().Configure(o =>
+        {
+            var list = o.Handlers.ListToolsHandler!;
+            o.Handlers.ListToolsHandler = (context, token)
+                => Volatile.Read(ref failing) ? throw new InvalidOperationException("the secret tool list") : list(context, token);
+            o.Handlers.ListResourcesHandler = (_, _) => throw new InvalidOperationException("the secret resource");
+            HeartbeatLab.SetPrompts(o, (_, _) => new ValueTask<ListPromptsResult>(
+                Task.FromException<ListPromptsResult>(new ArgumentException("the secret prompt"))));
+        });
+        var server = await lab.StartAsync(harness);
+        await lab.FirstHeartbeatAsync(server);
+        Volatile.Write(ref failing, true);
+        await server.CallToolAsync("alpha");
+        await lab.IdleAsync();
+
+        await using var redacting = new HeartbeatLab();
+        var options = new AgentCatOptions { RedactSensitiveInformation = (text, _) => throw new InvalidOperationException("cannot redact the secret " + text) };
+        var redacted = await redacting.StartAsync(HeartbeatLab.DemoServer(), options: options);
+        await redacted.ListToolsAsync();
+        await redacting.IdleAsync();
+
+        Assert.Equal(
+            new[]
+            {
+                "Server info heartbeat leaves out the resources list: InvalidOperationException",
+                "Server info heartbeat leaves out the prompts list: ArgumentException",
+                "Sent server info heartbeat | 4 tools | " + lab.Api.RawBodies[0].Length + " bytes",
+                "Server info heartbeat not sent: the tools list failed: InvalidOperationException",
+            },
+            lab.HeartbeatLines());
+        Assert.Equal(
+            new[] { "Server info heartbeat not sent: the redaction function failed: InvalidOperationException" },
+            redacting.HeartbeatLines());
+        Assert.DoesNotContain(lab.HeartbeatLines().Concat(redacting.HeartbeatLines()), line => line.Contains("secret", StringComparison.Ordinal));
+        Assert.Equal(0, redacting.Api.Count);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task A_server_with_one_kind_of_resource_answers_both_resource_lists_and_the_heartbeat_has_both_keys(bool templated)
+    {
+        await using var lab = new HeartbeatLab();
+        var harness = HeartbeatLab.Describe(new McpHarness().AddTool(() => "ok", "alpha"), "one-kind").Configure(o =>
+            o.ResourceCollection = new McpServerResourceCollection
+            {
+                templated
+                    ? McpServerResource.Create((string id) => id, new McpServerResourceCreateOptions { UriTemplate = "item:///{id}", Name = "item" })
+                    : McpServerResource.Create(() => "x", new McpServerResourceCreateOptions { UriTemplate = "file:///fixed.txt", Name = "fixed" }),
+            });
+        var server = await lab.StartAsync(harness);
+
+        var resources = await RawListAsync(server, RequestMethods.ResourcesList);
+        var templates = await RawListAsync(server, RequestMethods.ResourcesTemplatesList);
+        await server.CallToolAsync("alpha");
+
+        var features = (await lab.SingleBodyAsync())["features"]!.AsObject();
+        Assert.Equal(new[] { "tools", "resources", "resourceTemplates" }, features.Select(p => p.Key).ToArray());
+        Assert.Equal(templated ? 0 : 1, resources["resources"]!.AsArray().Count);
+        Assert.Equal(templated ? 1 : 0, templates["resourceTemplates"]!.AsArray().Count);
+        Assert.True(JsonNode.DeepEquals(resources["resources"], features["resources"]), features["resources"]!.ToJsonString());
+        Assert.True(JsonNode.DeepEquals(templates["resourceTemplates"], features["resourceTemplates"]), features["resourceTemplates"]!.ToJsonString());
+    }
+
+    // The answer of the server as a client gets it; a JSON-RPC error throws.
+    private static async Task<JsonNode> RawListAsync(McpHarness server, string method)
+    {
+        using var bound = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        bound.CancelAfter(FakeAgentCatApi.WaitBound);
+        var response = await server.Client.SendRequestAsync(new JsonRpcRequest { Method = method, Params = new JsonObject() }, bound.Token);
+        return response.Result!;
     }
 }

@@ -1,19 +1,20 @@
-using System;
 using System.Security.Claims;
+using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace AgentCat.Internal.ServerInfo;
 
-// What the heartbeat keeps of the request that started it: the parts a list handler reads from its context.
+// What the heartbeat keeps of the request that started it: the server, the request ID and the user for the context
+// of a list call, and the scope factory of the application. It never keeps the service provider of the request.
 internal sealed class HeartbeatOrigin
 {
-    internal HeartbeatOrigin(McpServer server, RequestId requestId, ClaimsPrincipal? user, IServiceProvider? services)
+    internal HeartbeatOrigin(McpServer server, RequestId requestId, ClaimsPrincipal? user, IServiceScopeFactory? scopeFactory)
     {
         Server = server;
         RequestId = requestId;
         User = user;
-        Services = services;
+        ScopeFactory = scopeFactory;
     }
 
     internal McpServer Server { get; }
@@ -22,5 +23,6 @@ internal sealed class HeartbeatOrigin
 
     internal ClaimsPrincipal? User { get; }
 
-    internal IServiceProvider? Services { get; }
+    // Null on a server that was built without dependency injection.
+    internal IServiceScopeFactory? ScopeFactory { get; }
 }
