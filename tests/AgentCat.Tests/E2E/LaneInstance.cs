@@ -334,7 +334,8 @@ internal sealed class LaneInstance : IAsyncDisposable
             _sender,
             gate: _setup.TestRun ? new EnabledGate(static _ => null, static () => true, _log) : null,
             exportHandler: _setup.ExportHandler,
-            exporterBuilder: _setup.ExportHandler is null ? null : ExporterFactory.Build);
+            exporterBuilder: _setup.ExportHandler is null ? null : ExporterFactory.Build,
+            serverInfoSender: _setup.ServerInfo);
 
         var builder = WebApplication.CreateSlimBuilder();
         if (_setup.Kestrel)

@@ -11,6 +11,7 @@ using AgentCat.Internal.Http;
 using AgentCat.Internal.Injection;
 using AgentCat.Internal.Json;
 using AgentCat.Internal.Runtime;
+using AgentCat.Internal.ServerInfo;
 using AgentCat.Internal.Text;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
@@ -56,6 +57,7 @@ internal sealed class CallToolSeam
         CancellationToken cancellationToken)
     {
         ClearItems(context);
+        ServerInfoHeartbeat.OnRequest(tracker, context, needsSettledMemory: !Intercepts(tracker, context.Params?.Name));
         DateTimeOffset? start = null;
         if (tracker.Settings.EnableTracing)
         {

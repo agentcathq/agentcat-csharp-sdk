@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using AgentCat.Internal.Logging;
 using AgentCat.Internal.Runtime;
+using AgentCat.Internal.ServerInfo;
 using AgentCat.Internal.Text;
 
 namespace AgentCat;
@@ -60,13 +61,17 @@ public sealed class AgentCatFake : IDisposable
 
     private readonly List<AgentCatEvent> _events = new();
     private readonly FakeLog _log = new();
+    private readonly RecordedServerInfo _serverInfo = new();
 
     internal AgentCatFake()
     {
-        Runtime = new AgentCatRuntime(_log, Record);
+        Runtime = new AgentCatRuntime(_log, Record, _serverInfo);
     }
 
     internal AgentCatRuntime Runtime { get; }
+
+    // The bodies of the server info heartbeats, in the order they were recorded. They are kept apart from the events.
+    internal IReadOnlyList<byte[]> ServerInfoBodies => _serverInfo.Bodies;
 
     /// <summary>Returns every recorded event, in the order that AgentCat queued them.</summary>
     /// <param name="cancellationToken">
@@ -244,6 +249,35 @@ public sealed class AgentCatFake : IDisposable
         cancellationToken.ThrowIfCancellationRequested();
         await Runtime.Pipeline.FlushAsync(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
+    }
+
+    // Keeps each heartbeat and answers as the API does when it accepts one. Nothing goes to the network.
+    private sealed class RecordedServerInfo : IServerInfoSender
+    {
+        private static readonly Task<int> Accepted = Task.FromResult(202);
+
+        private readonly List<byte[]> _bodies = new();
+
+        internal IReadOnlyList<byte[]> Bodies
+        {
+            get
+            {
+                lock (_bodies)
+                {
+                    return _bodies.ToArray();
+                }
+            }
+        }
+
+        public Task<int> PostServerInfoAsync(byte[] body, CancellationToken cancellationToken)
+        {
+            lock (_bodies)
+            {
+                _bodies.Add(body);
+            }
+
+            return Accepted;
+        }
     }
 
     private sealed class FakeLog : IAgentCatLog

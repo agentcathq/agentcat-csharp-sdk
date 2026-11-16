@@ -8,6 +8,8 @@ internal static class ApiBaseUrl
 
     internal const string EventsPath = "/v1/public/events/";
 
+    internal const string ServerInfoPath = "/v1/public/server-info/";
+
     internal static string? Resolve(string? option, Func<string, string?> environment)
     {
         if (!string.IsNullOrEmpty(option))
@@ -25,6 +27,10 @@ internal static class ApiBaseUrl
         return string.IsNullOrEmpty(legacy) ? null : legacy;
     }
 
-    internal static string EventsEndpoint(string baseUrl)
-        => (baseUrl.Length > 0 && baseUrl[baseUrl.Length - 1] == '/' ? baseUrl.Substring(0, baseUrl.Length - 1) : baseUrl) + EventsPath;
+    internal static string EventsEndpoint(string baseUrl) => WithoutTrailingSlash(baseUrl) + EventsPath;
+
+    internal static string ServerInfoEndpoint(string baseUrl) => WithoutTrailingSlash(baseUrl) + ServerInfoPath;
+
+    private static string WithoutTrailingSlash(string baseUrl)
+        => baseUrl.Length > 0 && baseUrl[baseUrl.Length - 1] == '/' ? baseUrl.Substring(0, baseUrl.Length - 1) : baseUrl;
 }

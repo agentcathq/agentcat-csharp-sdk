@@ -4,11 +4,12 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Threading;
 using System.Threading.Tasks;
+using AgentCat.Internal.ServerInfo;
 using AgentCat.Internal.Text;
 
 namespace AgentCat.Internal.Delivery;
 
-internal sealed class HttpEventSender : IEventSender, IDisposable
+internal sealed class HttpEventSender : IEventSender, IServerInfoSender, IDisposable
 {
     internal static readonly TimeSpan DefaultAttemptTimeout = TimeSpan.FromSeconds(10);
 
@@ -16,6 +17,7 @@ internal sealed class HttpEventSender : IEventSender, IDisposable
     private readonly bool _ownsClient;
     private readonly TimeSpan _attemptTimeout;
     private volatile string _endpoint = ApiBaseUrl.EventsEndpoint(ApiBaseUrl.Default);
+    private volatile string _serverInfoEndpoint = ApiBaseUrl.ServerInfoEndpoint(ApiBaseUrl.Default);
 
     internal HttpEventSender(HttpMessageHandler? handler = null, TimeSpan? attemptTimeout = null)
     {
@@ -34,7 +36,13 @@ internal sealed class HttpEventSender : IEventSender, IDisposable
 
     internal string Endpoint => _endpoint;
 
-    internal void SetBaseUrl(string baseUrl) => _endpoint = ApiBaseUrl.EventsEndpoint(baseUrl);
+    internal string ServerInfoEndpoint => _serverInfoEndpoint;
+
+    internal void SetBaseUrl(string baseUrl)
+    {
+        _endpoint = ApiBaseUrl.EventsEndpoint(baseUrl);
+        _serverInfoEndpoint = ApiBaseUrl.ServerInfoEndpoint(baseUrl);
+    }
 
     public async Task SendAsync(AgentCatEvent e, CancellationToken cancellationToken)
     {
@@ -54,17 +62,10 @@ internal sealed class HttpEventSender : IEventSender, IDisposable
         attempt.CancelAfter(_attemptTimeout);
         try
         {
-            using var content = new ByteArrayContent(body);
-            content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
-            using var request = new HttpRequestMessage(HttpMethod.Post, endpoint) { Content = content };
-            request.Headers.ExpectContinue = false;
-            request.Headers.TryAddWithoutValidation("User-Agent", SdkInfo.UserAgent);
-            using var response = await _client
-                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, attempt.Token)
-                .ConfigureAwait(false);
-            if (!response.IsSuccessStatusCode)
+            var status = await PostAsync(endpoint, body, attempt.Token).ConfigureAwait(false);
+            if (status < 200 || status > 299)
             {
-                throw new EventSendException("HTTP " + ((int)response.StatusCode).ToString(CultureInfo.InvariantCulture));
+                throw new EventSendException("HTTP " + status.ToString(CultureInfo.InvariantCulture));
             }
         }
         catch (EventSendException)
@@ -84,6 +85,23 @@ internal sealed class HttpEventSender : IEventSender, IDisposable
         {
             throw new EventSendException(ErrorText.Of(ex), ex);
         }
+    }
+
+    // One POST of the body to the server info endpoint. The caller sets the time limit through the token.
+    public Task<int> PostServerInfoAsync(byte[] body, CancellationToken cancellationToken)
+        => PostAsync(_serverInfoEndpoint, body, cancellationToken);
+
+    private async Task<int> PostAsync(string endpoint, byte[] body, CancellationToken cancellationToken)
+    {
+        using var content = new ByteArrayContent(body);
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        using var request = new HttpRequestMessage(HttpMethod.Post, endpoint) { Content = content };
+        request.Headers.ExpectContinue = false;
+        request.Headers.TryAddWithoutValidation("User-Agent", SdkInfo.UserAgent);
+        using var response = await _client
+            .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            .ConfigureAwait(false);
+        return (int)response.StatusCode;
     }
 
     public void Dispose()

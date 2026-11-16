@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 #endif
 using AgentCat.Internal.Lifecycle;
 using AgentCat.Internal.Logging;
+using AgentCat.Internal.ServerInfo;
 #if NETFRAMEWORK
 using Xunit.Sdk;
 using Xunit.v3;
@@ -14,6 +15,9 @@ namespace AgentCat.Tests.TestSupport;
 
 internal static class TestAssemblySetup
 {
+    // What the shared runtime of the test process gets in place of the HTTP sender of the server info heartbeat.
+    internal static RecordingServerInfoSender SharedServerInfo { get; } = new();
+
 #if NET
     [ModuleInitializer]
 #endif
@@ -42,6 +46,9 @@ internal static class TestAssemblySetup
         };
         Environment.SetEnvironmentVariable("AGENTCAT_DISABLE_DIAGNOSTICS", "true");
         Environment.SetEnvironmentVariable("AGENTCAT_ENABLED", "true");
+
+        // A server tracked on the shared runtime would send its server info heartbeat to the real API.
+        ServerInfoHeartbeat.SharedSenderOverride = SharedServerInfo;
 
         // A real process-exit or signal handler would drain the shared queue when the test run ends or is interrupted.
         ShutdownHandlers.Hooks = new RecordingShutdownHooks();
