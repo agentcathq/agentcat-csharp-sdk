@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-17
+
 ### Added
 
 - The server info heartbeat: about once an hour, the SDK sends AgentCat the server's name, version, title and instructions, and its full lists of tools, resources, resource templates and prompts. `RedactSensitiveInformation` runs on the text. The package now depends on `AgentCat.Api` 0.0.6.
@@ -30,5 +32,6 @@ First release of the AgentCat SDK for C#.
 - The `AGENTCAT_ENABLED` kill switch. AgentCat stays off in test runs, and `AgentCatSdk.Fake()` records events for your own tests.
 - Trim-safe and Native AOT compatible builds.
 
-[Unreleased]: https://github.com/agentcathq/agentcat-csharp-sdk/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/agentcathq/agentcat-csharp-sdk/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/agentcathq/agentcat-csharp-sdk/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/agentcathq/agentcat-csharp-sdk/releases/tag/v1.0.0
