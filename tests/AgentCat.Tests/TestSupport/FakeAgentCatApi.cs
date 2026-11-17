@@ -53,10 +53,13 @@ internal sealed class FakeAgentCatApi : IDisposable
     private readonly object _gate = new();
     private readonly Queue<int> _script = new();
     private readonly List<RecordedRequest> _requests = new();
+    private readonly List<RecordedRequest> _serverInfoRequests = new();
     private readonly List<(int Count, TaskCompletionSource<bool> Signal)> _waiters = new();
     private readonly List<TcpClient> _clients = new();
 
     internal const int Hang = -1;
+
+    private const string ServerInfoPath = "/v1/public/server-info/";
 
     private static readonly string[] CrLf = { "\r\n" };
 
@@ -87,6 +90,19 @@ internal sealed class FakeAgentCatApi : IDisposable
             lock (_gate)
             {
                 return _requests.ToArray();
+            }
+        }
+    }
+
+    // The server info heartbeats. They are kept apart from Requests, they are always answered 202 at once, and they
+    // use no scripted status.
+    internal IReadOnlyList<RecordedRequest> ServerInfoRequests
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _serverInfoRequests.ToArray();
             }
         }
     }
@@ -190,6 +206,17 @@ internal sealed class FakeAgentCatApi : IDisposable
                 return;
             }
 
+            if (request.Path == ServerInfoPath)
+            {
+                lock (_gate)
+                {
+                    _serverInfoRequests.Add(request);
+                }
+
+                await ReplyAsync(stream, 202).ConfigureAwait(false);
+                return;
+            }
+
             int status;
             lock (_gate)
             {
@@ -222,9 +249,7 @@ internal sealed class FakeAgentCatApi : IDisposable
                 _disposed.Token.ThrowIfCancellationRequested();
             }
 
-            var reply = Encoding.ASCII.GetBytes("HTTP/1.1 " + status + " X\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
-            await stream.WriteAsync(reply, 0, reply.Length).ConfigureAwait(false);
-            await stream.FlushAsync().ConfigureAwait(false);
+            await ReplyAsync(stream, status).ConfigureAwait(false);
         }
         catch (Exception)
         {
@@ -233,6 +258,13 @@ internal sealed class FakeAgentCatApi : IDisposable
         {
             client.Close();
         }
+    }
+
+    private static async Task ReplyAsync(NetworkStream stream, int status)
+    {
+        var reply = Encoding.ASCII.GetBytes("HTTP/1.1 " + status + " X\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+        await stream.WriteAsync(reply, 0, reply.Length).ConfigureAwait(false);
+        await stream.FlushAsync().ConfigureAwait(false);
     }
 
     private static async Task<RecordedRequest?> ReadRequestAsync(NetworkStream stream)

@@ -5,7 +5,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="ModelContextProtocol" Version="1.0.0" />
-    <PackageVersion Include="AgentCat.Api" Version="0.0.5" />
+    <PackageVersion Include="AgentCat.Api" Version="0.0.6" />
     <PackageVersion Include="Microsoft.Bcl.Memory" Version="10.0.4" />
     <PackageVersion Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" Version="5.6.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="5.6.0" />

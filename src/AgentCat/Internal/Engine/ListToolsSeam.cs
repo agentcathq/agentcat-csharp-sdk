@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using AgentCat.Internal.Injection;
+using AgentCat.Internal.ServerInfo;
 using AgentCat.Internal.Text;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -25,7 +26,16 @@ internal sealed class ListToolsSeam
         RequestContext<ListToolsRequestParams> context,
         CancellationToken cancellationToken)
     {
-        var original = await next(context, cancellationToken).ConfigureAwait(false);
+        ListToolsResult original;
+        try
+        {
+            original = await next(context, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            ServerInfoHeartbeat.OnRequest(tracker, context, needsSettledMemory: false);
+        }
+
         var log = tracker.Runtime.CallLog;
         try
         {

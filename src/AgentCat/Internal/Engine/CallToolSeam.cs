@@ -11,6 +11,7 @@ using AgentCat.Internal.Http;
 using AgentCat.Internal.Injection;
 using AgentCat.Internal.Json;
 using AgentCat.Internal.Runtime;
+using AgentCat.Internal.ServerInfo;
 using AgentCat.Internal.Text;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
@@ -49,7 +50,66 @@ internal sealed class CallToolSeam
     internal McpRequestHandler<CallToolRequestParams, CallToolResult> Wrap(McpRequestHandler<CallToolRequestParams, CallToolResult> next)
         => (context, cancellationToken) => InvokeAsync(Tracker, next, context, cancellationToken);
 
+    // The server info check runs when the call has ended, with a result or with an error.
     private static ValueTask<CallToolResult> InvokeAsync(
+        AgentCatTracker tracker,
+        McpRequestHandler<CallToolRequestParams, CallToolResult> next,
+        RequestContext<CallToolRequestParams> context,
+        CancellationToken cancellationToken)
+    {
+        if (!ServerInfoHeartbeat.AppliesTo(tracker))
+        {
+            return ServeAsync(tracker, next, context, cancellationToken);
+        }
+
+        ValueTask<CallToolResult> call;
+        try
+        {
+            call = ServeAsync(tracker, next, context, cancellationToken);
+        }
+        catch (Exception)
+        {
+            CheckServerInfo(tracker, context);
+            throw;
+        }
+
+        if (call.IsCompleted)
+        {
+            CheckServerInfo(tracker, context);
+            return call;
+        }
+
+        return ThenCheckServerInfoAsync(tracker, context, call);
+    }
+
+    private static async ValueTask<CallToolResult> ThenCheckServerInfoAsync(
+        AgentCatTracker tracker,
+        RequestContext<CallToolRequestParams> context,
+        ValueTask<CallToolResult> call)
+    {
+        try
+        {
+            return await call.ConfigureAwait(false);
+        }
+        finally
+        {
+            CheckServerInfo(tracker, context);
+        }
+    }
+
+    // Never throws: the result or the error of the call stays as it is.
+    private static void CheckServerInfo(AgentCatTracker tracker, RequestContext<CallToolRequestParams> context)
+    {
+        try
+        {
+            ServerInfoHeartbeat.OnRequest(tracker, context, needsSettledMemory: !Intercepts(tracker, context.Params?.Name));
+        }
+        catch (Exception)
+        {
+        }
+    }
+
+    private static ValueTask<CallToolResult> ServeAsync(
         AgentCatTracker tracker,
         McpRequestHandler<CallToolRequestParams, CallToolResult> next,
         RequestContext<CallToolRequestParams> context,

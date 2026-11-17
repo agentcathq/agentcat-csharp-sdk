@@ -7,6 +7,7 @@ using AgentCat.Internal.Delivery;
 using SdkDiagnostics = AgentCat.Internal.Diagnostics.Diagnostics;
 using AgentCat.Internal.Lifecycle;
 using AgentCat.Internal.Logging;
+using AgentCat.Internal.ServerInfo;
 using AgentCat.Internal.Telemetry;
 
 namespace AgentCat.Internal.Runtime;
@@ -42,15 +43,17 @@ internal sealed class AgentCatRuntime
         ShutdownDeadline? shutdownDeadline = null,
         HttpMessageHandler? exportHandler = null,
         IRandomSource? random = null,
-        ExporterBuilder? exporterBuilder = null)
-        : this(log, sender, settings, clock, gate, diagnostics, followsCurrent: false, record: null, shutdownDeadline, exportHandler, random, exporterBuilder)
+        ExporterBuilder? exporterBuilder = null,
+        IServerInfoSender? serverInfoSender = null)
+        : this(log, sender, settings, clock, gate, diagnostics, followsCurrent: false, record: null, shutdownDeadline, exportHandler, random, exporterBuilder, serverInfoSender)
     {
     }
 
     // Records each event after its last stage instead of sending it. Always on, with inert diagnostics. One reader
-    // keeps the recorded events in the order they were queued.
+    // keeps the recorded events in the order they were queued. It has no server info sender: while a fake is current,
+    // no heartbeat starts and no list handler runs for one.
     internal AgentCatRuntime(IAgentCatLog log, Action<AgentCatEvent> record)
-        : this(log, UnusedSender.Instance, new PipelineSettings { Concurrency = 1 }, null, null, null, followsCurrent: true, record, null, null, null, null)
+        : this(log, UnusedSender.Instance, new PipelineSettings { Concurrency = 1 }, null, null, null, followsCurrent: true, record, null, null, null, null, null)
     {
     }
 
@@ -66,7 +69,8 @@ internal sealed class AgentCatRuntime
         ShutdownDeadline? shutdownDeadline,
         HttpMessageHandler? exportHandler,
         IRandomSource? random,
-        ExporterBuilder? exporterBuilder)
+        ExporterBuilder? exporterBuilder,
+        IServerInfoSender? serverInfoSender)
     {
         _sender = sender;
         _followsCurrent = followsCurrent;
@@ -81,6 +85,7 @@ internal sealed class AgentCatRuntime
         Pipeline = new EventPipeline(sender, log, settings, Clock, record: record, exports: Exports);
         ShutdownDeadline = shutdownDeadline ?? new ShutdownDeadline();
         ExporterBuilder = exporterBuilder;
+        ServerInfo = new ServerInfoHeartbeat(serverInfoSender, log, Clock, Gate);
     }
 
     internal static AgentCatRuntime Shared => SharedInstance.Value;
@@ -121,6 +126,10 @@ internal sealed class AgentCatRuntime
 
     internal bool HostsExporters => ExporterBuilder is not null;
 
+    // The server info heartbeat of the servers that publish through this runtime. A runtime built without a server
+    // info sender sends none.
+    internal ServerInfoHeartbeat ServerInfo { get; }
+
     internal bool ExportersClaimed
     {
         get
@@ -146,7 +155,8 @@ internal sealed class AgentCatRuntime
             SystemPipelineClock.Instance,
             log.SetDiagnosticsSink,
             AgentCatHttp.Client);
-        return new AgentCatRuntime(log, new HttpEventSender(), null, null, gate, diagnostics, followsCurrent: true, record: null, shutdownDeadline: null, exportHandler: null, random: null, exporterBuilder: ExporterFactory.Build);
+        var sender = new HttpEventSender();
+        return new AgentCatRuntime(log, sender, null, null, gate, diagnostics, followsCurrent: true, record: null, shutdownDeadline: null, exportHandler: null, random: null, exporterBuilder: ExporterFactory.Build, ServerInfoHeartbeat.SharedSenderOverride ?? sender);
     }
 
     // Where a tracker installed on this runtime publishes. A tracker on Shared or on a fake's runtime follows the

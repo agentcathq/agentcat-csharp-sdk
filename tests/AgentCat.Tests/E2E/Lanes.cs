@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Text.Json;
+using AgentCat.Internal.ServerInfo;
 using AgentCat.Tests.TestSupport;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
@@ -99,8 +100,11 @@ internal sealed class LaneSetup
     // Hosts the server on Kestrel at a free loopback port instead of the in-memory TestServer.
     internal bool Kestrel { get; init; }
 
+    // The lane's runtime gives its server info heartbeats to this sender. Without it, the runtime sends none.
+    internal IServerInfoSender? ServerInfo { get; init; }
+
     internal bool CustomizesServer
-        => ProjectId is not null || AgentCat is not null || Server is not null || Transport is not null || App is not null || ExportHandler is not null || TestRun || Kestrel;
+        => ProjectId is not null || AgentCat is not null || Server is not null || Transport is not null || App is not null || ExportHandler is not null || TestRun || Kestrel || ServerInfo is not null;
 }
 
 // The lane sets the end-to-end theories run over, for the loaded MCP version.

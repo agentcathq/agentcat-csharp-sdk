@@ -5,5 +5,5 @@ what that commit of the TypeScript SDK produces.
 
 `json/stringify-vectors.json` is written by Node (v22) instead: `node tests/AgentCat.Tests/Fixtures/json/generate-stringify-vectors.mjs`.
 
-`api/public-schema.json` is the AgentCat public API schema, fetched on 2026-10-20 with
+`api/public-schema.json` is the AgentCat public API schema, fetched on 2026-11-16 with
 `curl -s 'https://api.agentcat.com/v1/schema/public/?format=json' -o tests/AgentCat.Tests/Fixtures/api/public-schema.json`.

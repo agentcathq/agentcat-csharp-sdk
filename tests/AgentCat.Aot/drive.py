@@ -4,7 +4,9 @@
 Usage: drive.py stdio|http <target framework> <app executable> <AgentCat package version>
 
 stdio: initialize, tools/list, an echo call and a boom call over stdin; then stdin closes and the app must exit 0.
+       The tools/list request also starts the server info heartbeat, which the fake API must get one time.
 http:  one stateless tools/call POST with a query string and a sentinel header; then SIGTERM, and the app must exit 0.
+       A tool call in a process that just started sends no server info heartbeat.
 
 The app runs with its own HOME (so the AgentCat log file lands in a temporary folder), AGENTCAT_API_URL pointing at
 the fake API and diagnostics off. In both modes the AgentCat log must have a sent line for every event and no warning,
@@ -29,6 +31,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 EVENTS_PATH = "/v1/public/events/"
+SERVER_INFO_PATH = "/v1/public/server-info/"
 TOOL_CALL = "mcp:tools/call"
 PROTOCOL_VERSION = "2025-06-18"
 RESPONSE_TIMEOUT = 30
@@ -68,7 +71,8 @@ class Failures:
 
 
 class FakeApi:
-    """Records every request and answers 202, like the AgentCat events API.
+    """Records every request and answers 202, like the AgentCat events API. The server info heartbeats are kept apart
+    from the events.
 
     Like that API, it speaks HTTP/1.1 and keeps each connection open for the next request. The HTTP/1.0 default of
     BaseHTTPRequestHandler closes the connection after each response, but .NET keeps such a connection in its pool:
@@ -78,6 +82,7 @@ class FakeApi:
 
     def __init__(self):
         self.requests = []
+        self.server_info = []
         self.lock = threading.Lock()
         owner = self
 
@@ -87,8 +92,9 @@ class FakeApi:
             def do_POST(self):
                 length = int(self.headers.get("Content-Length") or 0)
                 body = self.rfile.read(length) if length else b""
+                request = {"path": self.path, "headers": dict(self.headers.items()), "body": body}
                 with owner.lock:
-                    owner.requests.append({"path": self.path, "headers": dict(self.headers.items()), "body": body})
+                    (owner.server_info if self.path == SERVER_INFO_PATH else owner.requests).append(request)
                 self.send_response(202)
                 self.send_header("Content-Length", "0")
                 self.end_headers()
@@ -119,6 +125,15 @@ class FakeApi:
                 return
             time.sleep(0.1)
 
+    def heartbeats(self):
+        with self.lock:
+            return list(self.server_info)
+
+    def wait_for_heartbeats(self, count):
+        deadline = time.monotonic() + EVENT_TIMEOUT
+        while time.monotonic() < deadline and len(self.heartbeats()) < count:
+            time.sleep(0.1)
+
     def close(self):
         self.server.shutdown()
 
@@ -145,11 +160,12 @@ def wait_exit(process):
         return None
 
 
-def check_requests(failures, requests, version):
+def check_requests(failures, requests, version, path=EVENTS_PATH):
     user_agent = f"agentcat-csharp/{version} dotnet/"
     for request in requests:
         headers = {k.lower(): v for k, v in request["headers"].items()}
-        failures.equal(request["path"], EVENTS_PATH, "request path")
+        failures.equal(request["path"], path, "request path")
+        failures.check("authorization" not in headers, "the request has an Authorization header")
         failures.check(headers.get("content-type", "").startswith("application/json"),
                        f"Content-Type: {headers.get('content-type')!r}")
         failures.check("content-length" in headers and "transfer-encoding" not in headers,
@@ -171,6 +187,31 @@ def check_common(failures, event, project, version, tool):
         if failures.check(isinstance(request, dict), f"{tool}: parameters.request is not an object: {request!r}"):
             failures.equal((request.get("params") or {}).get("name"), tool, f"{tool}: parameters.request.params.name")
         failures.check(isinstance(parameters.get("extra"), dict), f"{tool}: parameters.extra is not an object")
+
+
+def check_heartbeat(failures, api, version, project, tools):
+    """One server info heartbeat with the six keys, the project and the tool list that a client gets."""
+    heartbeats = api.heartbeats()
+    check_requests(failures, heartbeats, version, SERVER_INFO_PATH)
+    if not failures.equal(len(heartbeats), 1, "number of server info heartbeats"):
+        return
+    try:
+        body = json.loads(heartbeats[0]["body"])
+    except ValueError:
+        body = None
+    if not failures.check(isinstance(body, dict), f"the server info body is not an object: {heartbeats[0]['body']!r}"):
+        return
+    failures.equal(sorted(body), ["features", "instructions", "project_id", "server_name", "server_title", "server_version"],
+                   "server info keys")
+    failures.equal(body.get("project_id"), project, "server info: project_id")
+    failures.check(isinstance(body.get("server_name"), str) and body["server_name"], "server info: no server_name")
+    features = body.get("features")
+    if failures.check(isinstance(features, dict), f"server info: features is not an object: {features!r}"):
+        failures.equal(sorted(features), ["tools"], "server info: feature keys")
+        listed = features.get("tools") if isinstance(features.get("tools"), list) else []
+        failures.equal(sorted(t.get("name") for t in listed if isinstance(t, dict)), tools, "server info: tools")
+        failures.check(all(isinstance(t, dict) and isinstance(t.get("inputSchema"), dict) for t in listed),
+                       "server info: a tool has no inputSchema")
 
 
 def text_of(response):
@@ -243,6 +284,7 @@ def run_stdio(tfm, executable, version, api, home, failures, processes):
     responses = reader.wait_for([1, 2, 3, 4])
     failures.equal(sorted(responses), [1, 2, 3, 4], "JSON-RPC responses received")
     api.wait_for_tool_calls(2)
+    api.wait_for_heartbeats(1)
     try:
         process.stdin.close()
     except BrokenPipeError:
@@ -265,6 +307,7 @@ def run_stdio(tfm, executable, version, api, home, failures, processes):
 
     requests, events = api.events()
     check_requests(failures, requests, version)
+    check_heartbeat(failures, api, version, STDIO_PROJECT, ["boom", "echo", "get_more_tools"])
 
     # No ASP.NET Core in a stdio app, so no HTTP capture.
     for event in events:
@@ -366,6 +409,7 @@ def run_http(tfm, executable, version, api, home, failures, processes):
 
     requests, events = api.events()
     check_requests(failures, requests, version)
+    failures.equal(len(api.heartbeats()), 0, "number of server info heartbeats")
     echo = find_tool_call(failures, events, "echo")
     if echo is not None:
         check_common(failures, echo, HTTP_PROJECT, version, "echo")
