@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-11-26
+
 ### Security
 
 - The SDK now masks sensitive values in every event before the event leaves your server. It tests each key in `parameters`, `response` and `error`, at any depth. When the key names a secret, the SDK keeps the key and replaces the value with `[redacted]`. A key names a secret when it is a known credential header (`authorization`, `cookie`, `x-api-key` and others) or has a word such as `token`, `secret`, `password`, `signature` or `api-key`, in any spelling (`X-Api-Key`, `HTTP_X_API_KEY`, `xApiKey`). Before, the SDK sent the HTTP headers of each MCP request as received, in `parameters.extra.requestInfo.headers`. Tool arguments and results under such key names lose their values too, for example `pageToken` and `auth_type`. `null`, `true` and `false` stay. No option turns the mask off (#10).
@@ -36,6 +38,7 @@ First release of the AgentCat SDK for C#.
 - The `AGENTCAT_ENABLED` kill switch. AgentCat stays off in test runs, and `AgentCatSdk.Fake()` records events for your own tests.
 - Trim-safe and Native AOT compatible builds.
 
-[Unreleased]: https://github.com/agentcathq/agentcat-csharp-sdk/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/agentcathq/agentcat-csharp-sdk/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/agentcathq/agentcat-csharp-sdk/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/agentcathq/agentcat-csharp-sdk/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/agentcathq/agentcat-csharp-sdk/releases/tag/v1.0.0
