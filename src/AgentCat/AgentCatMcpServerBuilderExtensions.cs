@@ -68,9 +68,10 @@ public static class AgentCatMcpServerBuilderExtensions
     /// <para>
     /// On an ASP.NET Core server, AgentCat copies the HTTP request headers and URL into each tool-call event, at
     /// <c>parameters.extra.requestInfo</c>, and into <see cref="AgentCatToolCall.Headers"/>. It reads them through
-    /// <c>IHttpContextAccessor</c> without a reference to ASP.NET Core, and keeps no request object. The headers go
-    /// out as received, including <c>authorization</c> and <c>cookie</c>, so redact them if they must not leave your
-    /// process. This method registers <c>HttpContextAccessor</c> when the app has none, also while AgentCat is off.
+    /// <c>IHttpContextAccessor</c> without a reference to ASP.NET Core, and keeps no request object. Before the event
+    /// leaves your process, AgentCat replaces the value of every header that names a secret, such as
+    /// <c>authorization</c> and <c>cookie</c>, with <c>[redacted]</c>. This method registers
+    /// <c>HttpContextAccessor</c> when the app has none, also while AgentCat is off.
     /// AgentCat has no request to read on stdio servers, on .NET Framework and <c>netstandard2.0</c> hosts, and with
     /// <c>PerSessionExecutionContext = true</c>. It also skips the read for a tool call whose client opts in to MCP 2.x
     /// tasks, because the MCP Tasks extension can run that call after the request has ended. The event then has no

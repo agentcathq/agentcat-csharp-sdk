@@ -33,8 +33,47 @@ public class ProjectionTests
         Assert.Equal("http://localhost/mcp", (string?)info["url"]);
         var headers = Assert.IsType<JsonObject>(info["headers"]);
         Assert.Equal("authorization,host,x-multi", string.Join(",", headers.Select(p => p.Key)));
-        Assert.Equal("Bearer t", (string?)headers["authorization"]);
+        Assert.Equal("[redacted]", (string?)headers["authorization"]);
         Assert.Equal("a, b", (string?)headers["x-multi"]);
+    }
+
+    // The real pipeline masks the credential headers in what the sender receives; the hook's headers and the request
+    // itself keep the values as received.
+    [Fact]
+    public async Task The_sender_receives_masked_credential_headers()
+    {
+        AgentCatToolCall? seen = null;
+        var options = new AgentCatOptions
+        {
+            EventProperties = (call, _) =>
+            {
+                seen = call;
+                return new ValueTask<JsonObject?>((JsonObject?)null);
+            },
+        };
+        var request = Request();
+        request.Request.Headers.Cookie = "sid=1";
+        request.Request.Headers["X-Api-Key"] = "k-123";
+        request.Request.Headers.UserAgent = "claude-code/2.0";
+        request.Request.Headers["X-Anthropic-Client"] = "cli";
+        request.Request.Headers["Mcp-Session-Id"] = "mcp-ses-1";
+        await using var h = Harness(new CountingAccessor(request), options);
+        await h.StartAsync(null, withServices: true);
+
+        await h.CallToolAsync("echo", "{}");
+
+        var headers = Assert.IsType<JsonObject>(Extra(await h.FlushAsync())["requestInfo"]?["headers"]);
+        Assert.Equal("[redacted]", (string?)headers["authorization"]);
+        Assert.Equal("[redacted]", (string?)headers["cookie"]);
+        Assert.Equal("[redacted]", (string?)headers["x-api-key"]);
+        Assert.Equal("claude-code/2.0", (string?)headers["user-agent"]);
+        Assert.Equal("cli", (string?)headers["x-anthropic-client"]);
+        Assert.Equal("mcp-ses-1", (string?)headers["mcp-session-id"]);
+        Assert.NotNull(seen);
+        Assert.Equal("Bearer t", seen.Headers["authorization"]);
+        Assert.Equal("sid=1", seen.Headers["cookie"]);
+        Assert.Equal("k-123", seen.Headers["x-api-key"]);
+        Assert.Equal("Bearer t", request.Request.Headers.Authorization.ToString());
     }
 
     [Fact]
@@ -48,6 +87,7 @@ public class ProjectionTests
         Assert.False(Extra(await h.FlushAsync()).ContainsKey("requestInfo"));
     }
 
+    // The hook gets the headers as received; the event has the same names, with the credential masked.
     [Fact]
     public async Task Hook_headers_match_the_event_headers()
     {
@@ -69,7 +109,8 @@ public class ProjectionTests
         Assert.NotNull(seen);
         Assert.Equal(
             headers.Select(p => new KeyValuePair<string, string?>(p.Key, (string?)p.Value)).ToArray(),
-            seen.Headers.Select(p => new KeyValuePair<string, string?>(p.Key, p.Value)).ToArray());
+            seen.Headers.Select(p => new KeyValuePair<string, string?>(p.Key, p.Key == "authorization" ? "[redacted]" : p.Value)).ToArray());
+        Assert.Equal("Bearer t", seen.Headers["authorization"]);
     }
 
     [Fact]

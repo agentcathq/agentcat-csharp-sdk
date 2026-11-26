@@ -57,23 +57,18 @@ public sealed class AgentCatOptions
     /// <summary>Redacts a whole event before delivery. Return <see langword="null"/> to drop the event.</summary>
     /// <remarks>
     /// <para>
-    /// The headers of the HTTP request are in <c>parameters.extra.requestInfo.headers</c>, as received, and its URL is in
-    /// <c>parameters.extra.requestInfo.url</c>. The URL keeps its query string, which can carry an API key or other
-    /// credentials. The hook also gets custom events, whose <c>parameters</c> can have any shape, and an exception in the
-    /// hook drops the event, so test each level by type. This sample removes the <c>authorization</c> and <c>cookie</c>
-    /// headers and the query string; remove any other header that carries a secret the same way:
+    /// The headers of the HTTP request are in <c>parameters.extra.requestInfo.headers</c>, and its URL is in
+    /// <c>parameters.extra.requestInfo.url</c>. The hook gets the headers as received; after the hook, AgentCat replaces the
+    /// value of every header that names a secret (<c>authorization</c>, <c>cookie</c>, <c>x-api-key</c> and others) with
+    /// <c>[redacted]</c>. The URL keeps its query string, which can carry an API key or other credentials. The hook also
+    /// gets custom events, whose <c>parameters</c> can have any shape, and an exception in the hook drops the event, so
+    /// test each level by type. This sample removes the query string:
     /// </para>
     /// <code>
     /// options.RedactEvent = (e, _) =>
     /// {
     ///     if (e.Parameters is JsonObject p &amp;&amp; p["extra"] is JsonObject x &amp;&amp; x["requestInfo"] is JsonObject info)
     ///     {
-    ///         if (info["headers"] is JsonObject headers)
-    ///         {
-    ///             headers.Remove("authorization");
-    ///             headers.Remove("cookie");
-    ///         }
-    ///
     ///         if (info["url"] is JsonValue url &amp;&amp; url.TryGetValue(out string? text) &amp;&amp; text.IndexOf('?') is var query and >= 0)
     ///         {
     ///             info["url"] = text.Substring(0, query);
