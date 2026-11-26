@@ -170,20 +170,30 @@ internal static class SensitiveKeys
         return JsonValue.Create(Mask);
     }
 
+    // RuntimeHelpers.TryEnsureSufficientExecutionStack is not in netstandard2.0.
+    private static bool StackHasRoom()
+    {
+        try
+        {
+            RuntimeHelpers.EnsureSufficientExecutionStack();
+            return true;
+        }
+        catch (InsufficientExecutionStackException)
+        {
+            return false;
+        }
+    }
+
     // A masked copy of value; value itself never changes. underProperties is true when value is the map stored under
     // the key "properties". As in JsJson, a map or list deeper than JsJson.MaxDepth (which the SDK cannot serialize)
-    // becomes the mask, and a thread stack too small for the walk throws.
+    // becomes the mask. So does a map or list that the thread stack has no room to walk: the stack of a secondary
+    // thread on macOS is too small for JsJson.MaxDepth levels.
     internal static JsonNode? MaskSensitiveKeys(JsonNode? value, bool underProperties = false, int depth = 0)
     {
         var node = value is null ? null : JsonTreeCopy.Expand(value);
-        if (node is JsonObject or JsonArray)
+        if (node is JsonObject or JsonArray && (depth >= JsJson.MaxDepth || !StackHasRoom()))
         {
-            if (depth >= JsJson.MaxDepth)
-            {
-                return JsonValue.Create(Mask);
-            }
-
-            RuntimeHelpers.EnsureSufficientExecutionStack();
+            return JsonValue.Create(Mask);
         }
 
         if (node is JsonArray list)

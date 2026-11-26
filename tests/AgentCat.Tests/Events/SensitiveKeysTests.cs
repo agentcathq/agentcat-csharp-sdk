@@ -40,7 +40,8 @@ public class SensitiveKeysTests
     }
 
     // A JsonValue that holds an object is a map, as the sanitizer and the truncator read it. A map or list deeper than
-    // the SDK can serialize becomes the mask, and the walk never overflows the stack.
+    // the SDK can serialize becomes the mask. On a thread with a small stack (a secondary thread on macOS) the walk
+    // stops earlier, and it still ends in the mask: it never throws and never overflows the stack.
     [Fact]
     public void Typed_values_are_maps_and_deep_trees_end_in_the_mask()
     {
@@ -59,13 +60,26 @@ public class SensitiveKeysTests
             leaf = next;
         }
 
-        var node = SensitiveKeys.MaskSensitiveKeys(deep);
-        for (var i = 0; i < 1000; i++)
+        AssertEndsInTheMask(SensitiveKeys.MaskSensitiveKeys(deep));
+
+        JsonNode? onASmallStack = null;
+        var thread = new Thread(() => onASmallStack = SensitiveKeys.MaskSensitiveKeys(deep), 256 * 1024);
+        thread.Start();
+        thread.Join();
+        AssertEndsInTheMask(onASmallStack);
+    }
+
+    private static void AssertEndsInTheMask(JsonNode? node)
+    {
+        var depth = 0;
+        while (node is JsonArray list)
         {
-            node = Assert.IsType<JsonArray>(node).Single();
+            node = list.Single();
+            depth++;
         }
 
         Assert.Equal("[redacted]", (string?)node);
+        Assert.InRange(depth, 1, 1000);
     }
 
     // A field that the mask cannot walk (here an object with a duplicate key) is dropped, with one log line, and the
