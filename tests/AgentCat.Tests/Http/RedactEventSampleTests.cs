@@ -29,16 +29,17 @@ public class RedactEventSampleTests
         Assert.DoesNotContain(log.Lines, l => l.StartsWith("Failed to redact event", StringComparison.Ordinal));
     }
 
-    // The query string can carry an API key or a configuration, so the sample removes it with the credentials.
+    // The query string can carry an API key or a configuration, so the sample removes it. The credential headers stay,
+    // and the mask after the hook replaces their values.
     [Fact]
-    public async Task The_sample_removes_the_credentials_and_the_query()
+    public async Task The_sample_removes_the_query_and_the_mask_covers_the_credentials()
     {
         var (sent, _) = await RedactAsync(
             "mcp:tools/call",
             """{"extra":{"requestId":1,"requestInfo":{"headers":{"authorization":"Bearer t","cookie":"a=1","x-a":"1"},"url":"https://h.example/mcp?api_key=k"}}}""");
 
         Assert.Equal(
-            """{"extra":{"requestId":1,"requestInfo":{"headers":{"x-a":"1"},"url":"https://h.example/mcp"}}}""",
+            """{"extra":{"requestId":1,"requestInfo":{"headers":{"authorization":"[redacted]","cookie":"[redacted]","x-a":"1"},"url":"https://h.example/mcp"}}}""",
             sent["parameters"]?.ToJsonString());
     }
 

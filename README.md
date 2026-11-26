@@ -235,7 +235,7 @@ builder.Services.AddMcpServer()
     });
 ```
 
-On ASP.NET Core, a tool-call event also carries the HTTP request of the call in `parameters.extra.requestInfo` (on legacy SSE, the session's `GET /sse` request; the [ASP.NET Core guide](https://docs.agentcat.com/sdk/csharp/aspnet-core) lists when there is none): each header as received, `authorization` and `cookie` included, and the URL with its query string, which can carry an API key. This `RedactEvent` hook removes the `authorization` and `cookie` headers and the query string; remove any other header that carries a secret, such as `x-api-key`, the same way. `RedactEvent` holds one hook, so merge this code with your other `RedactEvent` logic:
+On ASP.NET Core, a tool-call event also carries the HTTP request of the call in `parameters.extra.requestInfo` (on legacy SSE, the session's `GET /sse` request; the [ASP.NET Core guide](https://docs.agentcat.com/sdk/csharp/aspnet-core) lists when there is none): its headers and the URL with its query string. Before the event leaves your server, AgentCat replaces the value of every header that names a secret (`authorization`, `cookie`, `x-api-key` and others) with `[redacted]`; your hooks still see the values as received. The query string can carry an API key, so this `RedactEvent` hook removes it. `RedactEvent` holds one hook, so merge this code with your other `RedactEvent` logic:
 
 ```csharp fragment
 using System.Text.Json.Nodes;
@@ -249,12 +249,6 @@ builder.Services.AddMcpServer()
         {
             if (e.Parameters is JsonObject p && p["extra"] is JsonObject x && x["requestInfo"] is JsonObject info)
             {
-                if (info["headers"] is JsonObject headers)
-                {
-                    headers.Remove("authorization");
-                    headers.Remove("cookie");
-                }
-
                 if (info["url"] is JsonValue url && url.TryGetValue(out string? text) && text.IndexOf('?') is var query and >= 0)
                 {
                     info["url"] = text.Substring(0, query);

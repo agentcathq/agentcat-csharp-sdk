@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using AgentCat.Internal.Events;
@@ -103,6 +104,10 @@ internal sealed class EventProcessor
                 return;
             }
 
+            e.Parameters = MaskSensitiveKeys(e.Parameters, "parameters");
+            e.Response = MaskSensitiveKeys(e.Response, "response");
+            e.Error = MaskSensitiveKeys(e.Error, "error");
+
             try
             {
                 _truncate(e);
@@ -130,6 +135,20 @@ internal sealed class EventProcessor
         catch (Exception ex) when (!IsCancellation(ex, cancellationToken))
         {
             _log.Write("Failed to deliver AgentCat event after retries: " + SendFailureText(ex));
+        }
+    }
+
+    // A field that the mask cannot walk is dropped (null), never sent unmasked.
+    private JsonNode? MaskSensitiveKeys(JsonNode? field, string name)
+    {
+        try
+        {
+            return SensitiveKeys.MaskSensitiveKeys(field);
+        }
+        catch (Exception ex)
+        {
+            _log.Write("Failed to mask sensitive keys in " + name + ": " + ErrorText.Of(ex));
+            return null;
         }
     }
 

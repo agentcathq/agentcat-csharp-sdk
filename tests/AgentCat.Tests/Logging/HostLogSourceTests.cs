@@ -38,6 +38,7 @@ public sealed class HostLogSourceTests
         ["EnabledGate.cs: \"WARN: \" + Variable + \" \\\"\" + value + \"\\\" is"] = "WARN",
         ["EngineInstaller.cs: warning"] = "constant",
         ["EventProcessor.cs: \"Failed to deliver AgentCat event after retr"] = "failure",
+        ["EventProcessor.cs: \"Failed to mask sensitive keys in \" + name +"] = "failure",
         ["EventProcessor.cs: \"Failed to redact event (event-level hook):"] = "failure",
         ["EventProcessor.cs: \"Failed to redact event: \" + ErrorText.Of(ex"] = "failure",
         ["EventProcessor.cs: \"Failed to resolve pending hook results: \" +"] = "failure",

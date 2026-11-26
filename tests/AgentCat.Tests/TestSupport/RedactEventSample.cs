@@ -9,12 +9,6 @@ internal static class RedactEventSample
     {
         if (e.Parameters is JsonObject p && p["extra"] is JsonObject x && x["requestInfo"] is JsonObject info)
         {
-            if (info["headers"] is JsonObject headers)
-            {
-                headers.Remove("authorization");
-                headers.Remove("cookie");
-            }
-
             if (info["url"] is JsonValue url && url.TryGetValue(out string? text) && text.IndexOf('?') is var query and >= 0)
             {
                 info["url"] = text.Substring(0, query);

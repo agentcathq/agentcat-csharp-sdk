@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json.Nodes;
+using AgentCat.Internal.Events;
 using AgentCat.Tests.TestSupport;
 using Microsoft.AspNetCore.Builder;
 using ModelContextProtocol.AspNetCore;
@@ -10,7 +11,8 @@ using ModelContextProtocol.AspNetCore;
 namespace AgentCat.Tests.E2E;
 
 // The HTTP request of a tool call, captured on real MCP servers: its headers and URL in parameters.extra.requestInfo and
-// in AgentCatToolCall.Headers. Every header goes out verbatim, credentials included; RedactEvent removes them.
+// in AgentCatToolCall.Headers. The hooks get every header as received; the event that goes out has [redacted] as
+// the value of each header that names a secret.
 public class HttpCaptureE2ETests
 {
     private const string SentinelHeader = "X-AgentCat-E2E-Sentinel";
@@ -19,6 +21,7 @@ public class HttpCaptureE2ETests
     private const string CookieValue = "e2e_session=e2e-cookie-secret; theme=dark";
     private const string AuthorizationSecret = "e2e-secret-token";
     private const string CookieSecret = "e2e-cookie-secret";
+    private const string Masked = "[redacted]";
 
     // A streamable HTTP request of a session carries this header; the initialize POST that starts the session does not.
     private const string SessionIdHeader = "Mcp-Session-Id";
@@ -32,8 +35,8 @@ public class HttpCaptureE2ETests
     // parameters.extra of a stateful call, _meta left out: the client sends it on some versions only.
     private static readonly string[] StatefulExtraKeys = { "sessionId", "requestId", "requestInfo" };
 
-    // The client sends a sentinel and the two credentials that a customer may have to redact on every request. Each
-    // call's event carries the URL and every header of the POST that carried that call, and of no other request.
+    // The client sends a sentinel and two credentials on every request. Each call's event carries the URL and every
+    // header of the POST that carried that call, and of no other request, with the credentials masked.
     [Theory]
     [MemberData(nameof(LaneData.HttpLanes), MemberType = typeof(LaneData))]
     public async Task Headers_and_url_reach_the_event(string lane)
@@ -60,8 +63,8 @@ public class HttpCaptureE2ETests
             var headers = HeadersOf(info);
             AssertNamesLowerCaseAndSorted(headers);
             Assert.Equal(SentinelValue, (string?)headers["x-agentcat-e2e-sentinel"]);
-            Assert.Equal(AuthorizationValue, (string?)headers["authorization"]);
-            Assert.Equal(CookieValue, (string?)headers["cookie"]);
+            Assert.Equal(Masked, (string?)headers["authorization"]);
+            Assert.Equal(Masked, (string?)headers["cookie"]);
 
             // The POST that carried this call, with every header it had.
             var sent = requests[(string)headers[Stamp]!];
@@ -94,10 +97,11 @@ public class HttpCaptureE2ETests
         var headers = HeadersOf(RequestInfo(e2e.Events[0]));
         Assert.Equal(transportSession, (string?)headers["mcp-session-id"]);
         Assert.Equal(SentinelValue, (string?)headers["x-agentcat-e2e-sentinel"]);
-        Assert.Equal(AuthorizationValue, (string?)headers["authorization"]);
+        Assert.Equal(Masked, (string?)headers["authorization"]);
     }
 
-    // The hooks get the same headers as the event, in a dictionary whose lookup ignores case.
+    // The hooks get the same headers as the event, in a dictionary whose lookup ignores case, with the credentials as
+    // received: only the event is masked.
     [Theory]
     [MemberData(nameof(LaneData.HttpLanes), MemberType = typeof(LaneData))]
     public async Task Hook_sees_the_request_headers(string lane)
@@ -116,11 +120,11 @@ public class HttpCaptureE2ETests
         Assert.Equal(CookieValue, hook["cookie"]);
         Assert.Equal(TestServerHost, hook["Host"]);
         Assert.All(hook.Keys, k => Assert.Equal(k.ToLowerInvariant(), k));
-        Assert.Equal(Lines(HeadersOf(RequestInfo(e2e.Events[0]))), Lines(hook));
+        Assert.Equal(Lines(HeadersOf(RequestInfo(e2e.Events[0]))), Lines(MaskedHeaders(hook)));
     }
 
-    // Review Focus 3. The documented RedactEvent sample removes the credentials: they reach neither the AgentCat API
-    // nor any exporter, while the rest of the request still does.
+    // Review Focus 3. With the documented RedactEvent sample, the credentials reach neither the AgentCat API nor any
+    // exporter: the mask replaces their values, while the rest of the request still goes out.
     [Theory]
     [MemberData(nameof(LaneData.StatelessLanes), MemberType = typeof(LaneData))]
     public async Task Redacted_headers_reach_no_wire_or_exporter_body(string lane)
@@ -136,8 +140,8 @@ public class HttpCaptureE2ETests
         var wire = Encoding.UTF8.GetString(Assert.Single(e2e.Api.Requests).Body);
         AssertNoCredentials(wire);
         var headers = HeadersOf(RequestInfo(sent));
-        Assert.False(headers.ContainsKey("authorization"));
-        Assert.False(headers.ContainsKey("cookie"));
+        Assert.Equal(Masked, (string?)headers["authorization"]);
+        Assert.Equal(Masked, (string?)headers["cookie"]);
         Assert.Equal(SentinelValue, (string?)headers["x-agentcat-e2e-sentinel"]);
 
         ExporterE2ETests.AssertOneExportOf(host, sent.Id!, E2EAssert.SessionId(sent.SessionId));
@@ -233,7 +237,7 @@ public class HttpCaptureE2ETests
         await e2e.AssertEventCountAsync(1);
         var headers = HeadersOf(RequestInfo(e2e.Events[0]));
         Assert.Same(requests.Sent.Last(r => r.Method == "POST"), requests[(string)headers[Stamp]!]);
-        Assert.Equal(AuthorizationValue, (string?)headers["authorization"]);
+        Assert.Equal(Masked, (string?)headers["authorization"]);
     }
 
     // Legacy SSE runs the session's server inside its GET sse request, and POST message only queues the message,
@@ -263,18 +267,20 @@ public class HttpCaptureE2ETests
             var headers = HeadersOf(info);
             Assert.Equal(get.Stamp, (string?)headers[Stamp]);
             Assert.False(headers.ContainsKey("content-type"));
-            Assert.Equal(AuthorizationValue, (string?)headers["authorization"]);
+            Assert.Equal(Masked, (string?)headers["authorization"]);
             AssertSameHeaders(get, headers, TestServerHost);
         });
     }
 
     // Kestrel keeps two HTTP/1.1 Cookie lines as two values: they join with "; " as fetch joins them, other repeated
     // headers with ", ", and every name is lower-cased. HttpClient writes one line per header, so the request is raw.
+    // The hook sees the joined cookie; the event carries the mask in its place.
     [Theory]
     [MemberData(nameof(LaneData.StatelessLanes), MemberType = typeof(LaneData))]
     public async Task Two_cookie_lines_join_with_semicolon_space(string lane)
     {
-        await using var e2e = await Lanes.Get(lane).StartAsync(Scenarios.BaselineDefaults, new LaneSetup { Kestrel = true });
+        var seen = new ConcurrentQueue<IReadOnlyDictionary<string, string>>();
+        await using var e2e = await Lanes.Get(lane).StartAsync(Scenarios.BaselineDefaults, new LaneSetup { Kestrel = true, AgentCat = o => o.EventProperties = Recording(seen) });
         const string call = """{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"echo","arguments":{"msg":"raw","context":"two cookie lines"}}}""";
 
         var response = await PostRawAsync(
@@ -288,7 +294,8 @@ public class HttpCaptureE2ETests
         Assert.Equal(e2e.BaseUri.ToString(), (string?)info["url"]);
         var headers = HeadersOf(info);
         AssertNamesLowerCaseAndSorted(headers);
-        Assert.Equal("a=1; b=2", (string?)headers["cookie"]);
+        Assert.Equal("a=1; b=2", Assert.Single(seen)["cookie"]);
+        Assert.Equal(Masked, (string?)headers["cookie"]);
         Assert.Equal("one, two", (string?)headers["x-repeated"]);
         Assert.Equal("Kept As Sent", (string?)headers["x-mixed-case"]);
         Assert.Equal(e2e.BaseUri.Authority, (string?)headers["host"]);
@@ -334,12 +341,16 @@ public class HttpCaptureE2ETests
         Assert.Equal(names.OrderBy(n => n, StringComparer.Ordinal), names);
     }
 
-    // Every header the client sent, plus the Host header that the server adds, and nothing else, in name order.
+    // Every header the client sent, plus the Host header that the server adds, and nothing else, in name order, with
+    // the value of each header that names a secret masked.
     private static void AssertSameHeaders(SentRequest sent, JsonObject captured, string host)
     {
         var expected = new Dictionary<string, string>(sent.Headers) { ["host"] = host };
-        Assert.Equal(Lines(expected), captured.Select(h => h.Key + ": " + (string?)h.Value));
+        Assert.Equal(Lines(MaskedHeaders(expected)), captured.Select(h => h.Key + ": " + (string?)h.Value));
     }
+
+    private static IEnumerable<KeyValuePair<string, string>> MaskedHeaders(IEnumerable<KeyValuePair<string, string>> headers)
+        => headers.Select(h => new KeyValuePair<string, string>(h.Key, SensitiveKeys.IsSensitiveKey(h.Key) ? Masked : h.Value));
 
     // name: value, sorted by name.
     private static string[] Lines(IEnumerable<KeyValuePair<string, string>> headers)
